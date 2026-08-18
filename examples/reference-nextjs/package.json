@@ -10,12 +10,17 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node build.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc -p tsconfig.json"
   },
+  "dependencies": {
+    "@tracelog/capture-web": "workspace:*"
+  },
   "devDependencies": {
-    "@playwright/test": "1.62.1"
+    "@playwright/test": "1.62.1",
+    "@tracelog/event-contract": "workspace:*",
+    "@tracelog/testkit": "workspace:*"
   }
 }
