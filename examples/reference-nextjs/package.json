@@ -11,8 +11,10 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node build.mjs",
+    "pretest:integration": "turbo run build --filter=@tracelog/reference-nextjs --filter=@tracelog/api --filter=@tracelog/db",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:integration": "playwright test --config playwright.integration.config.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
@@ -20,6 +22,8 @@
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
+    "@tracelog/api": "workspace:*",
+    "@tracelog/db": "workspace:*",
     "@tracelog/event-contract": "workspace:*",
     "@tracelog/testkit": "workspace:*"
   }
