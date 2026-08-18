@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.sdk.json",
+  "compilerOptions": {
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts"]
+}
