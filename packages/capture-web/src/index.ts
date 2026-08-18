@@ -33,6 +33,16 @@ class MemoryStorage implements CaptureStorage {
   }
 }
 
+/**
+ * A platform artifact declares its own verification mode from the platform's
+ * test-order signal; a page opened from a verification session still derives
+ * it from the opener.
+ */
+export interface WebInitOptions extends InitOptions {
+  mode?: "verification";
+}
+
+let declaredMode: "verification" | undefined;
 let runtime: CaptureRuntime | undefined;
 let engine: CaptureEngine | undefined;
 let verification: VerificationMode | undefined;
@@ -93,7 +103,9 @@ function acquisition(): AcquisitionContext {
     utm: utm(),
     landingPage: landingPage(),
     device: device(),
-    ...(verification === undefined ? {} : { mode: "verification" as const }),
+    ...(verification === undefined && declaredMode === undefined
+      ? {}
+      : { mode: "verification" as const }),
   };
 }
 
@@ -167,8 +179,9 @@ function installListeners(): void {
   });
 }
 
-function init(options: InitOptions): void {
+function init(options: WebInitOptions): void {
   verification = verificationMode();
+  declaredMode = options.mode;
   const endpoint = options.endpoint ?? "/v1/events";
   configValid =
     WEB_PUBLIC_KEY_PATTERN.test(options.key) && isEndpointValid(endpoint);
