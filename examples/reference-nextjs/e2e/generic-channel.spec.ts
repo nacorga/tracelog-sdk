@@ -52,11 +52,13 @@ const ingestionStore = new InMemoryIngestionStore([]);
 let baseUrl = "";
 
 /** The snippet exactly as the verification session hands it over. */
-const snippet = `<script src="https://cdn.tracelog.io/v/${capturePackage.version}/tracelog.js"></script>
+function snippetFor(endpoint: string): string {
+  return `<script src="https://cdn.tracelog.io/v/${capturePackage.version}/tracelog.js"></script>
 <script>
-  TraceLog.init({ key: ${JSON.stringify(publicKey)} });
+  TraceLog.init({ key: ${JSON.stringify(publicKey)}, endpoint: ${JSON.stringify(endpoint)} });
   // Keep capture behind consent; call TraceLog.consent.grant() only after consent is granted.
 </script>`;
+}
 
 const plan: VersionedPlan = {
   id: "generic-plan",
@@ -151,13 +153,16 @@ class MemoryVerificationRepository implements VerificationRepositoryPort {
         }
       : null;
   }
-  async createLink(input: CreateVerificationLinkRecord) {
+  async createLink(
+    input: CreateVerificationLinkRecord,
+  ): Promise<VerificationLinkRecord> {
     return {
       id: input.id,
       projectId: input.projectId,
       createdBy: input.createdBy,
       expiresAt: input.expiresAt.toISOString(),
       revokedAt: null,
+      recipientEmail: input.recipientEmail,
     };
   }
   async resolveLink(): Promise<VerificationLinkRecord | null> {
@@ -190,6 +195,13 @@ const ingestion: IngestionDependencies = {
 };
 const verification: VerificationApiDependencies = {
   clock,
+  get channels() {
+    return {
+      eventsEndpoint: `${baseUrl}/v1/events`,
+      serverEventsEndpoint: `${baseUrl}/v1/server/events`,
+      appUrl: baseUrl,
+    };
+  },
   sessions: {
     session: async () => ({ userId: "user-a", email: "owner@example.com" }),
   },
@@ -207,7 +219,7 @@ api.get("/shop", async (_request, reply) =>
   <head><meta charset="utf-8"><title>Bare shop</title></head>
   <body>
     <h1>Bare shop</h1>
-    ${snippet.replace(
+    ${snippetFor(`${baseUrl}/v1/events`).replace(
       `https://cdn.tracelog.io/v/${capturePackage.version}/tracelog.js`,
       "/tracelog.js",
     )}
@@ -236,7 +248,9 @@ test("a bare page carrying the snippet reaches verified", async ({
   page,
   request,
 }) => {
+  const snippet = snippetFor(`${baseUrl}/v1/events`);
   expect(snippet).toContain("https://cdn.tracelog.io/v/");
+  expect(snippet).toContain(`endpoint: "${baseUrl}/v1/events"`);
   expect(snippet).not.toContain("latest");
 
   await page.goto(`${baseUrl}/shop`);
