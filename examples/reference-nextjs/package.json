@@ -24,7 +24,10 @@
     "@playwright/test": "1.62.1",
     "@tracelog/api": "workspace:*",
     "@tracelog/db": "workspace:*",
+    "@tracelog/detectors": "workspace:*",
+    "@tracelog/domain": "workspace:*",
     "@tracelog/event-contract": "workspace:*",
+    "@tracelog/platform-testkit": "workspace:*",
     "@tracelog/testkit": "workspace:*"
   }
 }

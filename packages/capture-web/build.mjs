@@ -44,6 +44,36 @@ const runtime = [clockSource, constants, coreSource, webSource]
   .map((source) => withoutExports(withoutImports(source)).trim())
   .join("\n");
 
+/**
+ * The published surface, written by hand because the bundle inlines its
+ * workspace dependencies: a consumer resolves no @tracelog/* package.
+ */
+const types = `export type ConsentState = "unknown" | "granted" | "denied";
+
+export interface InitOptions {
+  key: string;
+  endpoint?: string;
+  /** Declared by a platform artifact for its platform's test order. */
+  mode?: "verification";
+}
+
+export interface ConversionOptions {
+  identifier: string;
+  value?: number;
+  currency?: string;
+  context?: object;
+}
+
+declare const TraceLog: {
+  init(options: InitOptions): void;
+  consent: { grant(): void; deny(): void; state(): ConsentState };
+  step(name: string, context?: object): void;
+  conversion(name: string, options: ConversionOptions): void;
+};
+
+export default TraceLog;
+`;
+
 const esm = `${runtime}\nexport default TraceLog;\n`;
 const iife = `(function (global) {\n${runtime}\nglobal.TraceLog = TraceLog;\n})(globalThis);\n`;
 const compressedBytes = gzipSync(iife).byteLength;
@@ -55,6 +85,7 @@ if (compressedBytes > IIFE_BUDGET_BYTES) {
 }
 
 await Promise.all([
+  writeFile(path.join(distributionDirectory, "tracelog.d.ts"), types),
   writeFile(path.join(distributionDirectory, "tracelog.esm.js"), esm),
   writeFile(path.join(distributionDirectory, "tracelog.iife.js"), iife),
   writeFile(

@@ -1,21 +1,30 @@
 {
   "name": "@tracelog/capture-web",
   "version": "0.0.0",
-  "private": true,
+  "description": "The TraceLog browser capture runtime: consent-first, pinned per version.",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/tracelog.d.ts",
       "default": "./dist/tracelog.esm.js"
     },
     "./tracelog.iife.js": "./dist/tracelog.iife.js"
+  },
+  "files": [
+    "dist/tracelog.esm.js",
+    "dist/tracelog.iife.js",
+    "dist/tracelog.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node build.mjs",
     "test": "pnpm run build && vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": {
+  "devDependencies": {
     "@tracelog/capture-core": "workspace:*",
     "@tracelog/config": "workspace:*"
   }

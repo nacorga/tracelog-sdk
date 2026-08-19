@@ -1,0 +1,80 @@
+name: Release capture-web
+
+# One tag, one immutable version. No alias exists anywhere: not an npm
+# `latest` dist-tag, not a `v/latest/` path on the CDN. A published version
+# is never overwritten — the job refuses before it uploads.
+on:
+  push:
+    tags:
+      - "capture-web@*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CDN_BUCKET: ${{ secrets.CDN_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.CDN_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.CDN_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.CDN_REGION }}
+      AWS_ENDPOINT_URL: ${{ secrets.CDN_S3_ENDPOINT }}
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Read the released version from the tag
+        id: release
+        run: |
+          version="${GITHUB_REF_NAME#capture-web@}"
+          declared=$(node -p "require('./packages/capture-web/package.json').version")
+          if [ "$version" != "$declared" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the declared version $declared." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse to overwrite a published version
+        run: |
+          version="${{ steps.release.outputs.version }}"
+          if npm view "@tracelog/capture-web@$version" version >/dev/null 2>&1; then
+            echo "@tracelog/capture-web@$version is already published." >&2
+            exit 1
+          fi
+          if aws s3api head-object --bucket "$CDN_BUCKET" --key "v/$version/tracelog.js" >/dev/null 2>&1; then
+            echo "cdn.tracelog.io/v/$version/tracelog.js already exists." >&2
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tokens:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      - name: Publish the pinned version to npm
+        run: |
+          version="${{ steps.release.outputs.version }}"
+          pnpm --filter @tracelog/capture-web publish \
+            --no-git-checks --access public --tag "release-$version"
+          if npm dist-tag ls @tracelog/capture-web | grep -q '^latest:'; then
+            echo "A latest dist-tag exists; every consumer must pin a version." >&2
+            exit 1
+          fi
+
+      - name: Upload the immutable CDN path
+        run: |
+          version="${{ steps.release.outputs.version }}"
+          aws s3 cp packages/capture-web/dist/tracelog.iife.js \
+            "s3://$CDN_BUCKET/v/$version/tracelog.js" \
+            --content-type application/javascript \
+            --cache-control "public, max-age=31536000, immutable"
