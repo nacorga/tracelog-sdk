@@ -146,10 +146,12 @@ class MemoryVerificationRepository implements VerificationRepositoryPort {
     return requested === projectId
       ? {
           id: projectId,
+          organizationId: "org-a",
           name: "Bare shop",
           timezone: "UTC",
           publicKey,
           siteUrl: `${baseUrl}/shop`,
+          channel: "script" as const,
         }
       : null;
   }
@@ -200,6 +202,7 @@ const verification: VerificationApiDependencies = {
       eventsEndpoint: `${baseUrl}/v1/events`,
       serverEventsEndpoint: `${baseUrl}/v1/server/events`,
       appUrl: baseUrl,
+      siteUrl: "https://tracelog.io",
     };
   },
   sessions: {
@@ -207,6 +210,8 @@ const verification: VerificationApiDependencies = {
   },
   repository: new MemoryVerificationRepository(),
   evaluations: new MemoryEvaluationStore(),
+  /** No link is sent here; the port exists so the composition is whole. */
+  delivery: { send: async () => ({ id: "unsent" }) },
 };
 const api = createApi(ingestion, undefined, verification);
 
