@@ -13,10 +13,16 @@ name: Release capture-web
 # version, no alias anywhere: not an npm `latest` dist-tag, not a `v/latest/`
 # path on the CDN. A published version is never overwritten — the job refuses
 # before it uploads.
+#
+# `workflow_dispatch` publishes whatever version the package currently declares,
+# for the one case the merge path cannot cover: a version that was tagged while
+# publishing was off. It cannot invent a version — the manifest still decides
+# that — and it refuses a version already on npm or on the CDN.
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: release-capture-web
@@ -24,6 +30,7 @@ concurrency:
 
 jobs:
   version:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -43,7 +50,10 @@ jobs:
   # and nowhere a customer can reach.
   publish:
     needs: version
-    if: needs.version.outputs.released == 'true' && vars.SDK_PUBLISH == 'true'
+    if: >-
+      always() && vars.SDK_PUBLISH == 'true'
+      && (needs.version.outputs.released == 'true'
+      || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
