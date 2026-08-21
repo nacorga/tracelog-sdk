@@ -201,6 +201,7 @@ const verification: VerificationApiDependencies = {
     return {
       eventsEndpoint: `${baseUrl}/v1/events`,
       serverEventsEndpoint: `${baseUrl}/v1/server/events`,
+      assistantEndpoint: `${baseUrl}/v1/assistant/mcp`,
       appUrl: baseUrl,
       siteUrl: "https://tracelog.io",
     };
