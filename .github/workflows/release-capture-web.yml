@@ -1,27 +1,66 @@
 name: Release capture-web
 
-# One tag, one immutable version. No alias exists anywhere: not an npm
-# `latest` dist-tag, not a `v/latest/` path on the CDN. A published version
-# is never overwritten — the job refuses before it uploads.
+# One path to a release, and it starts with a merge to `main`.
+#
+# release-please reads the conventional commits that touched
+# `packages/capture-web` and keeps a pull request open with the next version
+# and the changelog entry it would write. Merging that pull request is the
+# decision to release: it bumps the version, writes CHANGELOG.md, and tags
+# `capture-web@<version>`. Nothing else creates that tag, because a second way
+# to publish is a way for the manifest and npm to disagree.
+#
+# The publish half then runs against that same commit. One tag, one immutable
+# version, no alias anywhere: not an npm `latest` dist-tag, not a `v/latest/`
+# path on the CDN. A published version is never overwritten — the job refuses
+# before it uploads.
 on:
   push:
-    tags:
-      - "capture-web@*"
+    branches:
+      - main
+
+concurrency:
+  group: release-capture-web
+  cancel-in-progress: false
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
     permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      released: ${{ steps.release.outputs.releases_created }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Like the deploy jobs, this skips rather than fails until the operator sets
+  # `SDK_PUBLISH`. A release that tagged and then failed to publish is the one
+  # state worth designing against: the version would exist in the repository
+  # and nowhere a customer can reach.
+  publish:
+    needs: version
+    if: needs.version.outputs.released == 'true' && vars.SDK_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      # OIDC: the same role the deploy assumes, which this environment already
+      # trusts. Four long-lived keys were the alternative.
+      id-token: write
       contents: read
     env:
-      CDN_BUCKET: ${{ secrets.CDN_BUCKET }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.CDN_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.CDN_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ secrets.CDN_REGION }}
-      AWS_ENDPOINT_URL: ${{ secrets.CDN_S3_ENDPOINT }}
+      CDN_BUCKET: ${{ vars.SDK_BUCKET }}
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10.12.4
@@ -31,16 +70,14 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
-      - name: Read the released version from the tag
+      # The version is read from the package rather than from the tag: this run
+      # is the merge release-please tagged, so the file is the release.
+      - name: Read the released version
         id: release
         run: |
-          version="${GITHUB_REF_NAME#capture-web@}"
-          declared=$(node -p "require('./packages/capture-web/package.json').version")
-          if [ "$version" != "$declared" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match the declared version $declared." >&2
-            exit 1
-          fi
+          version=$(node -p "require('./packages/capture-web/package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing capture-web $version"
 
       - name: Refuse to overwrite a published version
         run: |
