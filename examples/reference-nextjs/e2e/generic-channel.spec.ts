@@ -285,6 +285,14 @@ test("a bare page carrying the snippet reaches verified", async ({
       identifier: "order-777",
       firstBrowserAt: expect.any(String),
       firstServerAt: null,
+      /** The session the browser evidence belonged to, which attributes it. */
+      browserSessionId: expect.any(String),
+      /**
+       * The class of the first evidence, whatever it is: the engines this
+       * suite runs on do not agree about whether a headless browser looks
+       * like a robot, and the identity is not what that decides.
+       */
+      trafficClass: expect.any(String),
     },
   ]);
 });
