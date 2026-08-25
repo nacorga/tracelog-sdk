@@ -189,6 +189,7 @@ const ingestion: IngestionDependencies = {
             originAllowlist: [baseUrl],
             stagingHostnames: [],
             internalIpCidrs: [],
+            timezone: "UTC",
           }
         : null,
   },
