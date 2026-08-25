@@ -56,7 +56,7 @@ const database = createPool(integrationDatabaseUrl());
 const api = createApi({
   clock,
   metadata: new PostgresProjectMetadataPort(database, clock),
-  store: new PostgresIngestionStore(database),
+  store: new PostgresIngestionStore(database, clock),
   country: { countryCode: () => "ES" },
 });
 
