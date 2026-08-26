@@ -101,12 +101,28 @@ jobs:
             exit 1
           fi
 
+      # Scoped to what can reach the tarball, not to the whole tree. CI runs
+      # every gate over this same commit on the push that release-please's
+      # merge produced; repeating three Next builds and the platform's test
+      # suite here proves nothing new about 12 KB of browser runtime, and it
+      # lets an unrelated red build hold a release the SDK is ready for.
+      #
+      # What is left is everything that *can* change the published bytes:
+      # `lint`, because the SDK boundary rules live there and a platform
+      # import in `capture-core` would ship server code to customer sites;
+      # the root suite, because `tools/sdk-package.test.ts` opens the tarball
+      # and uses it the way a stranger does; and the package's own graph —
+      # config, event-contract and capture-core are inlined into the bundle,
+      # so their tests are tests of what is published.
+      #
+      # `tokens:check` is not here: the design tokens are `packages/ui`, which
+      # this artifact never touches.
       - run: pnpm install --frozen-lockfile
-      - run: pnpm tokens:check
       - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm build
+      - run: pnpm exec vitest run --config vitest.config.ts
+      - run: pnpm --filter @tracelog/capture-web... typecheck
+      - run: pnpm --filter @tracelog/capture-web... test
+      - run: pnpm --filter @tracelog/capture-web... build
 
       - name: Publish the pinned version to npm
         run: |
