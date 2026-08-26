@@ -47,6 +47,14 @@ jobs:
   version:
     if: github.event_name == 'push' && vars.SDK_PUBLISH == 'true'
     runs-on: ubuntu-latest
+    # `SDK_PUBLISH` is a variable of this environment and not of the
+    # repository, so a job that does not name the environment reads nothing
+    # for it. Without this line the gate above would close on an empty string
+    # and keep closing: setting the variable would switch `publish` on and
+    # leave `version` off, which is a release path that can never open a pull
+    # request. The environment's only rule is a branch policy naming `main` —
+    # no reviewer, no wait — and this workflow runs nowhere else.
+    environment: production
     permissions:
       contents: write
       pull-requests: write
