@@ -2,6 +2,11 @@ name: Release capture-web
 
 # One path to a release, and it starts with a merge to `main`.
 #
+# Both halves are switched off by one repository variable, `SDK_PUBLISH`, so
+# until the operator sets it and the npm credential beside it, a merge to
+# `main` produces nothing here at all — no pull request, no branch, no tag.
+# The switch-on sequence is in docs/build/state.md § Operator gates.
+#
 # release-please reads the conventional commits that touched
 # `packages/capture-web` and keeps a pull request open with the next version
 # and the changelog entry it would write. Merging that pull request is the
@@ -29,8 +34,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # `SDK_PUBLISH` gates this half too, and not only the publish below: a
+  # release pull request nobody can complete is worse than none. Closed, it
+  # comes back on the next push — #29 was closed and returned as #36 — so it
+  # accumulates as noise on a branch that is supposed to be quiet, and merging
+  # it would tag a version that publishing is switched off for.
+  #
+  # Nothing is lost by waiting. release-please keeps no state of its own: it
+  # derives the next version and the changelog from git, back to
+  # `bootstrap-sha`, so the first run after the switch is thrown covers
+  # everything accumulated in one pull request.
   version:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && vars.SDK_PUBLISH == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
