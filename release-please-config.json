@@ -39,7 +39,12 @@
           "hidden": true
         }
       ],
-      "bootstrap-sha": "f438d5f5c6230f93722a2fde1ba9f16034503920"
+      "bootstrap-sha": "f438d5f5c6230f93722a2fde1ba9f16034503920",
+      "extra-files": [
+        "README.md",
+        "/apps/web/src/generated/capture-version.ts",
+        "/apps/site/src/generated/capture-version.ts"
+      ]
     }
   }
 }

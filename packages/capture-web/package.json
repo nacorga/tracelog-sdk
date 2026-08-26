@@ -2,8 +2,18 @@
   "name": "@tracelog/capture-web",
   "version": "1.0.0",
   "description": "The TraceLog browser capture runtime: consent-first, pinned per version.",
+  "keywords": [
+    "conversion",
+    "conversion-tracking",
+    "tracking-plan",
+    "consent",
+    "gdpr",
+    "first-party"
+  ],
+  "homepage": "https://tracelog.io",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/tracelog.d.ts",
@@ -14,7 +24,10 @@
   "files": [
     "dist/tracelog.esm.js",
     "dist/tracelog.iife.js",
-    "dist/tracelog.d.ts"
+    "dist/tracelog.d.ts",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "publishConfig": {
     "access": "public"

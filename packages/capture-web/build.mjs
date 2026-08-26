@@ -18,6 +18,16 @@ function withoutExports(source) {
     .replace(/\bexport\s+(?=(?:const|function|class)\b)/g, "");
 }
 
+/**
+ * Each source is an already-emitted file carrying its own `sourceMappingURL`,
+ * and the bundle is their concatenation: the maps are not published, and would
+ * not describe this file if they were. Left in, the last one wins and every
+ * consumer's devtools asks the CDN for a key that was never uploaded.
+ */
+function withoutSourceMaps(source) {
+  return source.replace(/^\/\/# sourceMappingURL=.*$\n?/gm, "");
+}
+
 const contractPath = path.join(
   workspaceDirectory,
   "packages/event-contract/dist/index.js",
@@ -41,7 +51,9 @@ const constants = [
   `const MAX_BATCH_EVENTS = ${JSON.stringify(contract.MAX_BATCH_EVENTS)};`,
 ].join("\n");
 const runtime = [clockSource, constants, coreSource, webSource]
-  .map((source) => withoutExports(withoutImports(source)).trim())
+  .map((source) =>
+    withoutExports(withoutImports(withoutSourceMaps(source))).trim(),
+  )
   .join("\n");
 
 /**
