@@ -14,6 +14,8 @@ before they inform a decision. <https://tracelog.io>
 `v/latest/` on the CDN, so the version you pin is the bytes you get, for as long
 as they are served.
 
+<!-- x-release-please-start-version -->
+
 ```bash
 npm install @tracelog/capture-web@1.0.0
 ```
@@ -23,6 +25,9 @@ Without a build step, the same runtime as a script tag:
 ```html
 <script src="https://cdn.tracelog.io/v/1.0.0/tracelog.js"></script>
 ```
+
+<!-- x-release-please-end -->
+
 
 One runtime, two forms: ESM with types for npm, and an IIFE on
 `globalThis.TraceLog` for the script tag. Both are exercised on every browser of

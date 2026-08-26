@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -271,12 +272,18 @@ export const state: "unknown" | "granted" | "denied" = TraceLog.consent.state();
     expect(extraFiles.length).toBeGreaterThan(0);
 
     for (const file of extraFiles) {
-      // Without the leading slash release-please resolves the path under
-      // `packages/capture-web/`, finds nothing, and updates nothing —
-      // silently.
-      expect(file.startsWith("/")).toBe(true);
-      const contents = readFileSync(path.join(root, file.slice(1)), "utf8");
-      expect(contents).toContain("x-release-please-version");
+      // release-please resolves a leading slash against the repository and
+      // everything else against the package. Getting that backwards updates
+      // nothing and says nothing, so both halves are resolved here the same
+      // way and the file has to be there.
+      const resolved = file.startsWith("/")
+        ? path.join(root, file.slice(1))
+        : path.join(root, "packages/capture-web", file);
+
+      expect(existsSync(resolved), `${file} resolves to ${resolved}`).toBe(
+        true,
+      );
+      expect(readFileSync(resolved, "utf8")).toContain("x-release-please-");
     }
   });
 
