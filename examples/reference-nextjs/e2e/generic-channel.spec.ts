@@ -17,6 +17,8 @@ import type {
 import type {
   CreateVerificationLinkRecord,
   VerificationLinkRecord,
+  RecordRuntimeHandshakeInput,
+  RuntimeHandshakePort,
   VerificationRepositoryPort,
   VersionedPlan,
 } from "@tracelog/domain";
@@ -138,9 +140,16 @@ class MemoryEvaluationStore {
   }
 }
 
-class MemoryVerificationRepository implements VerificationRepositoryPort {
+class MemoryVerificationRepository
+  implements VerificationRepositoryPort, RuntimeHandshakePort
+{
+  readonly handshakes: RecordRuntimeHandshakeInput[] = [];
+
   async canAccessProject(): Promise<boolean> {
     return true;
+  }
+  async recordHandshake(input: RecordRuntimeHandshakeInput): Promise<void> {
+    this.handshakes.push(input);
   }
   async readProjectContext(requested: string) {
     return requested === projectId
