@@ -2,9 +2,10 @@ name: Release capture-web
 
 # One path to a release, and it starts with a merge to `main`.
 #
-# Both halves are switched off by one repository variable, `SDK_PUBLISH`, so
-# until the operator sets it and the npm credential beside it, a merge to
-# `main` produces nothing here at all — no pull request, no branch, no tag.
+# Both halves are switched off by one variable of the `production`
+# environment, `SDK_PUBLISH`, so until the operator sets it and the npm
+# credential beside it, a merge to `main` produces nothing here at all — no
+# pull request, no branch, no tag.
 # The switch-on sequence is in docs/build/state.md § Operator gates.
 #
 # release-please reads the conventional commits that touched
@@ -119,6 +120,16 @@ jobs:
             echo "@tracelog/capture-web@$version is already published." >&2
             exit 1
           fi
+
+          # The bucket has to answer before its silence means anything. A
+          # missing object and a refused request both exit non-zero, and
+          # swallowing the difference is how this job publishes to npm and
+          # then fails to upload — the version on the registry, absent from
+          # the CDN, and neither side rewritable. `head-bucket` needs
+          # `s3:ListBucket`, which is also what makes the 404 below honest:
+          # without it S3 answers a missing key with 403 rather than 404.
+          aws s3api head-bucket --bucket "$CDN_BUCKET"
+
           if aws s3api head-object --bucket "$CDN_BUCKET" --key "v/$version/tracelog.js" >/dev/null 2>&1; then
             echo "cdn.tracelog.io/v/$version/tracelog.js already exists." >&2
             exit 1
