@@ -17,8 +17,15 @@ name: Release capture-web
 #
 # The publish half then runs against that same commit. One tag, one immutable
 # version, no alias anywhere: not an npm `latest` dist-tag, not a `v/latest/`
-# path on the CDN. A published version is never overwritten — the job refuses
-# before it uploads.
+# path on the CDN. A published version is never overwritten.
+#
+# The CDN goes first and npm last, and the order is the whole design. Both
+# sides are immutable, so a run that completes one and fails the other cannot
+# be undone, only finished — and only one of the two failures can be finished.
+# A CDN path with no version on npm is invisible: nothing resolves it, and
+# re-running this job repairs it, because an object already carrying these
+# exact bytes is not an error. A version on npm whose script tag answers 404
+# is already in somebody else's page, and no re-run takes it back.
 #
 # `workflow_dispatch` publishes whatever version the package currently declares,
 # for the one case the merge path cannot cover: a version that was tagged while
@@ -113,27 +120,24 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Releasing capture-web $version"
 
-      - name: Refuse to overwrite a published version
+      # npm is the half that cannot be taken back, so a version already there
+      # ends the run before anything is built. The CDN is not asked here: what
+      # it holds only matters once there are bytes to compare it against, and
+      # that is the upload step's own question.
+      #
+      # `head-bucket` is not a safety check — the order below is what makes
+      # this job safe — it is the difference between failing in five seconds
+      # and failing after a full build. It needs `s3:ListBucket`, which is
+      # also what makes a 404 from the upload step honest: without it S3
+      # answers a missing key with 403.
+      - name: Refuse to release a version that is already on npm
         run: |
           version="${{ steps.release.outputs.version }}"
           if npm view "@tracelog/capture-web@$version" version >/dev/null 2>&1; then
             echo "@tracelog/capture-web@$version is already published." >&2
             exit 1
           fi
-
-          # The bucket has to answer before its silence means anything. A
-          # missing object and a refused request both exit non-zero, and
-          # swallowing the difference is how this job publishes to npm and
-          # then fails to upload — the version on the registry, absent from
-          # the CDN, and neither side rewritable. `head-bucket` needs
-          # `s3:ListBucket`, which is also what makes the 404 below honest:
-          # without it S3 answers a missing key with 403 rather than 404.
           aws s3api head-bucket --bucket "$CDN_BUCKET"
-
-          if aws s3api head-object --bucket "$CDN_BUCKET" --key "v/$version/tracelog.js" >/dev/null 2>&1; then
-            echo "cdn.tracelog.io/v/$version/tracelog.js already exists." >&2
-            exit 1
-          fi
 
       # Scoped to what can reach the tarball, not to the whole tree. CI runs
       # every gate over this same commit on the push that release-please's
@@ -158,6 +162,56 @@ jobs:
       - run: pnpm --filter @tracelog/capture-web... test
       - run: pnpm --filter @tracelog/capture-web... build
 
+      # An object already at this key is not automatically a refusal, because
+      # this step running twice is how the run before it gets finished. It is
+      # a refusal when the bytes differ: one version, two runtimes, on the one
+      # path a customer pinned and cannot re-point. The comparison is honest
+      # because the build is reproducible — the bundle is a concatenation of
+      # already-emitted files with no clock in it — and because 21 KB is one
+      # part, so S3's ETag is the file's MD5 rather than a digest of digests.
+      - name: Upload the immutable CDN path
+        run: |
+          version="${{ steps.release.outputs.version }}"
+          key="v/$version/tracelog.js"
+          file=packages/capture-web/dist/tracelog.iife.js
+
+          if etag=$(aws s3api head-object --bucket "$CDN_BUCKET" --key "$key" \
+              --query ETag --output text 2>&1); then
+            present=yes
+          else
+            case "$etag" in
+              *404*|*"Not Found"*) present=no ;;
+              *)
+                echo "$etag" >&2
+                echo "The CDN could not be read, so whether $key is there is unknown." >&2
+                exit 1 ;;
+            esac
+          fi
+
+          if [ "$present" = no ]; then
+            aws s3 cp "$file" "s3://$CDN_BUCKET/$key" \
+              --content-type application/javascript \
+              --cache-control "public, max-age=31536000, immutable"
+            echo "Uploaded cdn.tracelog.io/$key"
+            exit 0
+          fi
+
+          etag=${etag//\"/}
+          case "$etag" in
+            *-*)
+              echo "cdn.tracelog.io/$key was uploaded in parts, so its ETag is a digest of digests and not this file's checksum. Compare it by hand." >&2
+              exit 1 ;;
+          esac
+
+          if [ "$etag" != "$(md5sum "$file" | cut -d' ' -f1)" ]; then
+            echo "cdn.tracelog.io/$key exists and is not these bytes. One version cannot be two runtimes; release the next version instead." >&2
+            exit 1
+          fi
+          echo "cdn.tracelog.io/$key is already these exact bytes, left as it is."
+
+      # Last, because this is the half no re-run can take back. Everything
+      # above can be repeated; a version on npm cannot be withdrawn, and a
+      # `latest` dist-tag would let a consumer resolve one without naming it.
       - name: Publish the pinned version to npm
         run: |
           version="${{ steps.release.outputs.version }}"
@@ -167,11 +221,3 @@ jobs:
             echo "A latest dist-tag exists; every consumer must pin a version." >&2
             exit 1
           fi
-
-      - name: Upload the immutable CDN path
-        run: |
-          version="${{ steps.release.outputs.version }}"
-          aws s3 cp packages/capture-web/dist/tracelog.iife.js \
-            "s3://$CDN_BUCKET/v/$version/tracelog.js" \
-            --content-type application/javascript \
-            --cache-control "public, max-age=31536000, immutable"
