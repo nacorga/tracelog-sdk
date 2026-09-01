@@ -3,10 +3,11 @@
 The TraceLog browser capture runtime. It captures the conversion path a project
 declares — each conversion and the steps preceding it — and nothing else.
 
-TraceLog is an automated conversion analyst: it verifies the conversion path
-a project declares against the events TraceLog receives, watches every
-declared step every day, alerts when events for one stop arriving and names
-the TraceLog figures that are incomplete, and never makes up a number.
+TraceLog is Trustworthy Conversion Intelligence — conversion intelligence you
+can verify: it verifies the conversion path a project declares against the
+events TraceLog receives, watches every declared step every day, alerts when
+events for one stop arriving and names the TraceLog figures that are
+incomplete, and never makes up a number.
 <https://tracelog.io>
 
 ## Install
