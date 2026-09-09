@@ -447,7 +447,19 @@ export function createCaptureEngine(
         return;
       }
 
-      if (response.status >= 400 && response.status < 500) {
+      /**
+       * A 4xx is the server's word that this batch will never be accepted —
+       * except a 429, which is the server's word that it will be accepted
+       * later: the ingestion limit is per public key, shared by every visitor
+       * of one site, so a busy minute answers 429 to visitors whose events
+       * are sound. Dropping those is silent loss ([spec/capture.md]
+       * § Delivery); they take the retry path with everything else transient.
+       */
+      if (
+        response.status >= 400 &&
+        response.status < 500 &&
+        response.status !== 429
+      ) {
         const currentQueue = readQueue(ports.storage);
         const rejected = new Set(batch.events.map((event) => event.eventId));
         currentQueue.events = currentQueue.events.filter(

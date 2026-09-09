@@ -259,6 +259,29 @@ describe("capture engine", () => {
     });
   });
 
+  /**
+   * The one 4xx that is transient by construction: the ingestion limit is per
+   * public key, so a busy minute refuses sound events. They are kept and
+   * retried, never counted as rejected ([spec/capture.md] § Delivery).
+   */
+  it("keeps a rate-limited batch and retries it", async () => {
+    const { runtime, storage, requests } = setup([
+      { status: 429 },
+      { status: 202 },
+    ]);
+    runtime.engine.consent.grant();
+    runtime.engine.step("checkout_started");
+
+    await runtime.flush();
+    expect(requests).toHaveLength(1);
+    expect(queue(storage).events).toHaveLength(2);
+    expect(queue(storage).drops).toEqual({});
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(requests).toHaveLength(2);
+    expect(queue(storage)).toEqual({ events: [], drops: {} });
+  });
+
   it("captures errors only after a declared event and attaches the latest name", () => {
     const { runtime, storage } = setup();
     runtime.engine.consent.grant();

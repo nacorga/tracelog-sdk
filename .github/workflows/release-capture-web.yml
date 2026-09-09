@@ -6,7 +6,7 @@ name: Release capture-web
 # environment, `SDK_PUBLISH`, so until the operator sets it and the npm
 # credential beside it, a merge to `main` produces nothing here at all — no
 # pull request, no branch, no tag.
-# The switch-on sequence is in docs/build/state.md § Operator gates.
+# The switch-on sequence is in docs/build/operator-gates.md.
 #
 # release-please reads the conventional commits that touched
 # `packages/capture-web` and keeps a pull request open with the next version
