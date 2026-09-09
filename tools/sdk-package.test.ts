@@ -197,6 +197,27 @@ process.stdout.write(
     CONSUMER_TIMEOUT,
   );
 
+  /**
+   * `exports` is what a modern resolver reads; `main`, `module` and `types`
+   * are what everything older reads, and a manifest carrying only the first
+   * is invisible to the second. The three fallbacks have to name the same
+   * files, or two resolvers see two packages.
+   */
+  it("names the same files through `exports` and the legacy fields", () => {
+    const manifest = JSON.parse(
+      readFileSync(path.join(extracted, "package.json"), "utf8"),
+    ) as {
+      main?: string;
+      module?: string;
+      types?: string;
+      exports: { ".": { types: string; default: string } };
+    };
+
+    expect(manifest.main).toBe(manifest.exports["."].default);
+    expect(manifest.module).toBe(manifest.exports["."].default);
+    expect(manifest.types).toBe(manifest.exports["."].types);
+  });
+
   it(
     "typechecks for a consumer, against the types it publishes",
     () => {
@@ -250,6 +271,43 @@ export const state: "unknown" | "granted" | "denied" = TraceLog.consent.state();
           "node",
           [path.join(root, "node_modules/typescript/bin/tsc"), "-p", "."],
           consumerRoot,
+        ),
+      ).not.toThrow();
+
+      // The same consumer on the resolver that never reads `exports`: a
+      // project still on `moduleResolution: "node"` finds the types through
+      // the top-level `types` field or not at all.
+      const legacy = path.join(consumerRoot, "node10");
+      mkdirSync(legacy, { recursive: true });
+      writeFileSync(
+        path.join(legacy, "consumer.ts"),
+        readFileSync(path.join(consumerRoot, "consumer.ts"), "utf8"),
+      );
+      writeFileSync(
+        path.join(legacy, "tsconfig.json"),
+        `${JSON.stringify(
+          {
+            compilerOptions: {
+              module: "es2020",
+              moduleResolution: "node",
+              target: "es2020",
+              lib: ["ES2020", "DOM"],
+              strict: true,
+              noEmit: true,
+              types: [],
+            },
+            include: ["consumer.ts"],
+          },
+          null,
+          2,
+        )}\n`,
+      );
+
+      expect(() =>
+        run(
+          "node",
+          [path.join(root, "node_modules/typescript/bin/tsc"), "-p", "."],
+          legacy,
         ),
       ).not.toThrow();
     },

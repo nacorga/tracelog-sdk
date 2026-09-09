@@ -209,15 +209,45 @@ jobs:
           fi
           echo "cdn.tracelog.io/$key is already these exact bytes, left as it is."
 
+      # A precondition, so it runs before the publish and not after it: a
+      # `latest` dist-tag lets a consumer resolve a version without naming
+      # one, and found afterwards it would already be answering
+      # `npm install @tracelog/capture-web` while the job could only report
+      # it. What this proves is that no earlier run left an alias behind. It
+      # cannot prove what the registry does on the package's very first
+      # publish — npm may set `latest` itself when the first version of a
+      # package arrives, `--tag` or not — which is why the publish step below
+      # prints the dist-tags it ends with. On the first publish, read them:
+      # if `latest` is there, `npm dist-tag rm @tracelog/capture-web latest`
+      # by hand, and record what the registry answered in
+      # docs/build/operator-gates.md § The SDK release path.
+      #
+      # A 404 is a package that does not exist yet, which has no tags; any
+      # other failure is a question this step cannot answer, and it stops.
+      - name: Refuse to publish beside a latest dist-tag
+        run: |
+          if tags=$(npm dist-tag ls @tracelog/capture-web 2>&1); then
+            :
+          else
+            case "$tags" in
+              *E404*|*"404"*) tags="" ;;
+              *)
+                echo "$tags" >&2
+                echo "The registry could not be read, so whether a latest dist-tag exists is unknown." >&2
+                exit 1 ;;
+            esac
+          fi
+          if printf '%s\n' "$tags" | grep -q '^latest:'; then
+            echo "A latest dist-tag exists; every consumer must pin a version." >&2
+            exit 1
+          fi
+
       # Last, because this is the half no re-run can take back. Everything
-      # above can be repeated; a version on npm cannot be withdrawn, and a
-      # `latest` dist-tag would let a consumer resolve one without naming it.
+      # above can be repeated; a version on npm cannot be withdrawn.
       - name: Publish the pinned version to npm
         run: |
           version="${{ steps.release.outputs.version }}"
           pnpm --filter @tracelog/capture-web publish \
             --no-git-checks --access public --tag "release-$version"
-          if npm dist-tag ls @tracelog/capture-web | grep -q '^latest:'; then
-            echo "A latest dist-tag exists; every consumer must pin a version." >&2
-            exit 1
-          fi
+          echo "dist-tags after publishing $version:"
+          npm dist-tag ls @tracelog/capture-web

@@ -3,6 +3,8 @@ import {
   EVENT_ENVELOPE_VERSION,
   MAX_BATCH_BYTES,
   MAX_BATCH_EVENTS,
+  MAX_CONTEXT_BYTES,
+  MAX_ERROR_MESSAGE_BYTES,
   type Event,
   type EventBatch,
   type EventContext,
@@ -14,7 +16,12 @@ const CONSENT_KEY = "__tl.c";
 const SESSION_KEY = "__tl.s";
 const ACTIVITY_KEY = "__tl.a";
 const QUEUE_KEY = "__tl.q";
-const PRE_CONSENT_CAP = 100;
+/**
+ * How many events wait in memory before consent. A platform artifact that
+ * buffers its own platform's events ahead of this engine holds the same line,
+ * so the number is exported rather than mirrored.
+ */
+export const PRE_CONSENT_CAP = 100;
 const QUEUE_CAP = 200;
 const SESSION_INACTIVITY_MS = 30 * 60 * 1000;
 const FLUSH_INTERVAL_MS = 5 * 1000;
@@ -24,6 +31,13 @@ const CIRCUIT_FAILURE_THRESHOLD = 5;
 const CIRCUIT_PROBE_MS = 60 * 1000;
 const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 const PUBLIC_KEY_PATTERN = /^tl_pk_[a-z2-7]{26}$/;
+/**
+ * The contract states these inside its schemas (`conversionEventSchema`,
+ * `currencySchema`) and exports no constant for them; the schemas themselves
+ * are not imported because zod is not part of the runtime a visitor loads.
+ */
+const MAX_IDENTIFIER_LENGTH = 256;
+const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 const textEncoder = new TextEncoder();
 
 export type ConsentState = "unknown" | "granted" | "denied";
@@ -211,7 +225,8 @@ function jsonContext(value: object | undefined): EventContext | undefined {
   if (value === undefined) return undefined;
   try {
     const serialized = JSON.stringify(value);
-    if (textEncoder.encode(serialized).byteLength > 8 * 1024) return undefined;
+    if (textEncoder.encode(serialized).byteLength > MAX_CONTEXT_BYTES)
+      return undefined;
     const parsed = JSON.parse(serialized) as unknown;
     if (
       typeof parsed !== "object" ||
@@ -244,15 +259,27 @@ function truncateUtf8(value: string, maxBytes: number): string {
 function isConversionValid(options: ConversionOptions): boolean {
   return (
     options.identifier.length >= 1 &&
-    options.identifier.length <= 256 &&
+    options.identifier.length <= MAX_IDENTIFIER_LENGTH &&
     (options.value === undefined ||
       (Number.isFinite(options.value) && options.value >= 0)) &&
-    (options.currency === undefined || /^[A-Z]{3}$/.test(options.currency))
+    (options.currency === undefined || CURRENCY_PATTERN.test(options.currency))
   );
 }
 
-function batchFrom(events: Event[]): EventBatch {
+interface BatchSelection {
+  batch: EventBatch;
+  /**
+   * Events that exceed the batch budget on their own. No batch can ever carry
+   * one, so leaving it at the head of the queue would hold every event behind
+   * it until overflow shifted it out — silently, and for as long as it took.
+   * The caller drops them as `invalid_event`, which is what they are.
+   */
+  unsendable: Event[];
+}
+
+function batchFrom(events: Event[]): BatchSelection {
   const selected: Event[] = [];
+  const unsendable: Event[] = [];
   for (const event of events) {
     if (selected.length >= MAX_BATCH_EVENTS) break;
     const candidate: EventBatch = {
@@ -262,11 +289,15 @@ function batchFrom(events: Event[]): EventBatch {
     if (
       textEncoder.encode(JSON.stringify(candidate)).byteLength > MAX_BATCH_BYTES
     ) {
+      if (selected.length === 0) {
+        unsendable.push(event);
+        continue;
+      }
       break;
     }
     selected.push(event);
   }
-  return { v: EVENT_ENVELOPE_VERSION, events: selected };
+  return { batch: { v: EVENT_ENVELOPE_VERSION, events: selected }, unsendable };
 }
 
 export function createCaptureEngine(
@@ -416,7 +447,15 @@ export function createCaptureEngine(
       circuit = "half_open";
     }
 
-    const batch = batchFrom(queue.events);
+    const { batch, unsendable } = batchFrom(queue.events);
+    if (unsendable.length > 0) {
+      const dropped = new Set(unsendable.map((event) => event.eventId));
+      queue.events = queue.events.filter(
+        (event) => !dropped.has(event.eventId),
+      );
+      addDrop(queue, "invalid_event", unsendable.length);
+      writeQueue(ports.storage, queue);
+    }
     if (batch.events.length === 0) {
       scheduleFlush(FLUSH_INTERVAL_MS);
       return;
@@ -578,7 +617,7 @@ export function createCaptureEngine(
         ...baseEvent(now, session.id),
         kind: "error",
         name: "capture_error",
-        message: truncateUtf8(message, 1024),
+        message: truncateUtf8(message, MAX_ERROR_MESSAGE_BYTES),
         stepName: lastDeclaredName,
       });
     },

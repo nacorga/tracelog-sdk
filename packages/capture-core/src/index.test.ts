@@ -112,6 +112,33 @@ describe("capture engine", () => {
     expect(runtime.engine.consent.state()).toBe("denied");
   });
 
+  /**
+   * A refusal is the one thing remembered before any grant: one key, no
+   * identifier, nothing else, so the visitor who refused is not asked again by
+   * the runtime on the next load ([spec/capture.md] § Consent first).
+   */
+  it("remembers a denial before any grant as one key and nothing else", () => {
+    const { runtime, storage, requests } = setup();
+    runtime.engine.step("checkout_started");
+    runtime.engine.consent.deny();
+
+    expect([...storage.values.entries()]).toEqual([["__tl.c", "denied"]]);
+    expect(requests).toEqual([]);
+
+    const next = createCaptureEngine(
+      {
+        transport: { send: async () => ({ status: 202 }) },
+        storage,
+        clock: new MutableClock(),
+      },
+      acquisition,
+    );
+    next.engine.init({ key: validKey });
+    next.engine.step("checkout_started");
+    expect(next.engine.consent.state()).toBe("denied");
+    expect([...storage.values.entries()]).toEqual([["__tl.c", "denied"]]);
+  });
+
   it("rotates a UUIDv7 session at 30 minutes and emits session_start first", () => {
     const { runtime, storage, clock } = setup();
     runtime.engine.consent.grant();
@@ -174,6 +201,33 @@ describe("capture engine", () => {
     expect(
       new TextEncoder().encode(JSON.stringify(batch)).byteLength,
     ).toBeLessThanOrEqual(MAX_BATCH_BYTES);
+  });
+
+  /**
+   * No batch can carry an event over the budget on its own, so left at the
+   * head of the queue it would hold everything behind it until overflow shifted
+   * it out. It is dropped and counted instead, and the queue moves.
+   */
+  it("drops an event no batch can carry as invalid and keeps delivering", async () => {
+    const { runtime, storage, requests } = setup([], {
+      ...acquisition,
+      landingPage: `https://shop.example/?q=${"x".repeat(MAX_BATCH_BYTES)}`,
+    });
+    runtime.engine.consent.grant();
+    runtime.engine.step("checkout_started");
+    expect(queue(storage).events.map((event) => event.kind)).toEqual([
+      "session_start",
+      "step",
+    ]);
+
+    await runtime.flush();
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.batch.events.map((event) => event.kind)).toEqual([
+      "step",
+    ]);
+    expect(queue(storage)).toEqual({ events: [], drops: { invalid_event: 1 } });
+    expect(runtime.drops()).toEqual([{ reason: "invalid_event", count: 1 }]);
   });
 
   it("marks verification traffic and preserves keepalive delivery", async () => {

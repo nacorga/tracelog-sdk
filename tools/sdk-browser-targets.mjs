@@ -4,10 +4,3 @@ export const sdkBrowserTargets = Object.freeze({
   firefox: ">=100",
   edge: ">=100",
 });
-
-export const sdkBundleTargets = Object.freeze([
-  "chrome100",
-  "safari15.4",
-  "firefox100",
-  "edge100",
-]);
