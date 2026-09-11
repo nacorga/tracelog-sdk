@@ -45,10 +45,19 @@ const [clockSource, coreSource, webSource, contract] = await Promise.all([
   import(pathToFileURL(contractPath).href),
 ]);
 
+/**
+ * Every value the core imports from the contract, inlined by name: the
+ * import line is stripped below, so a constant missing here is a
+ * ReferenceError on the customer's page, not a build failure. The bundle
+ * inlines the numbers and never the schemas, because zod is not part of the
+ * runtime a visitor loads.
+ */
 const constants = [
   `const EVENT_ENVELOPE_VERSION = ${JSON.stringify(contract.EVENT_ENVELOPE_VERSION)};`,
   `const MAX_BATCH_BYTES = ${JSON.stringify(contract.MAX_BATCH_BYTES)};`,
   `const MAX_BATCH_EVENTS = ${JSON.stringify(contract.MAX_BATCH_EVENTS)};`,
+  `const MAX_CONTEXT_BYTES = ${JSON.stringify(contract.MAX_CONTEXT_BYTES)};`,
+  `const MAX_ERROR_MESSAGE_BYTES = ${JSON.stringify(contract.MAX_ERROR_MESSAGE_BYTES)};`,
 ].join("\n");
 const runtime = [clockSource, constants, coreSource, webSource]
   .map((source) =>

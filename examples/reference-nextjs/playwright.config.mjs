@@ -3,11 +3,13 @@
  * the build step named and is about this file. They bind nothing — they are what
  * the next person to work here should know before they change it.
  *
- * Step 20 → whoever revisits `examples/reference-nextjs`: `test:e2e` matches
- * `merge-point-integration.spec.ts` as well, which needs the schema its own
- * `test:integration` config prepares in `globalSetup`; run under `test:e2e`
- * with a `DATABASE_URL` it fails with "relation organizations does not exist".
- * Pre-existing, and CI runs neither command; `test:integration` passes.
+ * Step 20 → whoever revisits `examples/reference-nextjs`: `test:e2e` used to
+ * match `merge-point-integration.spec.ts` as well, which needs the schema its
+ * own `test:integration` config prepares in `globalSetup`; run under
+ * `test:e2e` with a `DATABASE_URL` it failed with "relation organizations does
+ * not exist". Closed: `testIgnore` below keeps it out, and CI's `sdk-e2e` job
+ * runs `test:e2e` on every push; `test:integration` still needs a database
+ * and runs by hand.
  */
 
 import { defineConfig } from "@playwright/test";
