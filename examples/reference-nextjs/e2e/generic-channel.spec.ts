@@ -25,6 +25,7 @@ import type {
 import {
   InMemoryIngestionStore,
   type InMemoryProjectSnapshot,
+  InMemorySuppressions,
 } from "@tracelog/platform-testkit";
 
 /**
@@ -224,6 +225,8 @@ const verification: VerificationApiDependencies = {
   evaluations: new MemoryEvaluationStore(),
   /** No link is sent here; the port exists so the composition is whole. */
   delivery: { send: async () => ({ id: "unsent" }) },
+  /** Nor is anything suppressed: the same reason, and the same wholeness. */
+  suppressions: new InMemorySuppressions(),
 };
 const api = createApi(ingestion, undefined, verification);
 
