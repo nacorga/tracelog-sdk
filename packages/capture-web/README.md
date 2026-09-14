@@ -74,6 +74,10 @@ That is all of it, and it is what the major version protects.
 declares for its platform's own test order. A site's own snippet never sets it —
 the runtime derives verification mode from the window that opened the page.
 
+Call `init` once per page load. The runtime is built on the first call and
+kept; a later call re-reads the key and the endpoint and rebuilds nothing else,
+so a mode or an acquisition the first call decided stands for the page.
+
 The application generates the exact calls your declared plan needs, so you never
 type a name TraceLog already knows.
 
