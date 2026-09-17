@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -59,8 +61,28 @@ const SURFACE = [
   "conversion",
 ];
 
+/**
+ * The other two published packages. `capture-web` is what a site installs, but
+ * the artifacts under `integrations/` bind `capture-core` directly and
+ * TraceLog's own ingestion validates against `event-contract`, so all three
+ * are somebody else's dependency and all three are opened here.
+ */
+const LIBRARY_PACKAGES = [
+  {
+    name: "@tracelog/capture-core",
+    directory: "packages/capture-core",
+    entry: "dist/index.js",
+  },
+  {
+    name: "@tracelog/event-contract",
+    directory: "packages/event-contract",
+    entry: "dist/index.js",
+  },
+] as const;
+
 let consumerRoot = "";
 let extracted = "";
+const extractedLibraries = new Map<string, string>();
 
 function run(command: string, args: readonly string[], cwd: string): string {
   return execFileSync(command, [...args], {
@@ -70,42 +92,64 @@ function run(command: string, args: readonly string[], cwd: string): string {
   });
 }
 
+/** Packs one workspace package and lays it out where a resolver looks. */
+function packInto(name: string, staging: string, into: string): string {
+  run("pnpm", ["--filter", name, "pack", "--pack-destination", staging], root);
+  const tarball = readdirSync(staging).find((entry) => entry.endsWith(".tgz"));
+  if (tarball === undefined) {
+    throw new Error(`No tarball was produced for ${name} in ${staging}`);
+  }
+  mkdirSync(into, { recursive: true });
+  // The tarball's own `package/` prefix is stripped, so the package lands
+  // where a resolver looks for it.
+  run(
+    "tar",
+    ["-xzf", path.join(staging, tarball), "-C", into, "--strip-components=1"],
+    root,
+  );
+  return path.join(staging, tarball);
+}
+
 beforeAll(() => {
   // Through turbo, so the work is shared with the `build` gate that follows
-  // in the same run rather than repeated.
+  // in the same run rather than repeated. The filter's `...` carries
+  // capture-core and event-contract, which are packed below.
   run(
     "pnpm",
     ["exec", "turbo", "run", "build", `--filter=${packageName}...`],
     root,
   );
 
-  const staging = mkdtempSync(path.join(tmpdir(), "tracelog-sdk-pack-"));
-  run(
-    "pnpm",
-    ["--filter", packageName, "pack", "--pack-destination", staging],
-    root,
-  );
-  const tarball = readdirSync(staging).find((entry) => entry.endsWith(".tgz"));
-  if (tarball === undefined) {
-    throw new Error(`No tarball was produced in ${staging}`);
-  }
-
   consumerRoot = mkdtempSync(path.join(tmpdir(), "tracelog-sdk-consumer-"));
   extracted = path.join(consumerRoot, "node_modules", packageName);
-  mkdirSync(extracted, { recursive: true });
-  // The tarball's own `package/` prefix is stripped, so the package lands
-  // where a resolver looks for it.
-  run(
-    "tar",
-    [
-      "-xzf",
-      path.join(staging, tarball),
-      "-C",
-      extracted,
-      "--strip-components=1",
-    ],
-    root,
+  packInto(
+    packageName,
+    mkdtempSync(path.join(tmpdir(), "tracelog-sdk-pack-")),
+    extracted,
   );
+
+  for (const library of LIBRARY_PACKAGES) {
+    const into = path.join(consumerRoot, "node_modules", library.name);
+    packInto(
+      library.name,
+      mkdtempSync(path.join(tmpdir(), "tracelog-sdk-pack-")),
+      into,
+    );
+    extractedLibraries.set(library.name, into);
+  }
+
+  /**
+   * `event-contract` declares one real runtime dependency, and a consumer
+   * installs it from the registry. Here the resolved copy is linked in, so
+   * importing the extracted package executes the way it would for a stranger
+   * rather than failing on a module the tarball never promised to carry.
+   */
+  const zod = path.dirname(
+    createRequire(
+      path.join(root, "packages/event-contract/package.json"),
+    ).resolve("zod/package.json"),
+  );
+  symlinkSync(zod, path.join(consumerRoot, "node_modules", "zod"), "dir");
 }, BUILD_AND_PACK_TIMEOUT);
 
 describe("the published capture-web tarball", () => {
@@ -358,4 +402,89 @@ export const state: "unknown" | "granted" | "denied" = TraceLog.consent.state();
     // 404 every time somebody opens devtools.
     expect(offenders).toEqual([]);
   });
+});
+
+/**
+ * The two packages nobody installs by accident, and everything depends on.
+ * `capture-web` is checked above the way a site uses it; these are checked the
+ * way the artifacts under `integrations/` and TraceLog's own ingestion use
+ * them — resolved by name, imported by a real `node`, and pinned to each
+ * other.
+ */
+describe.each(LIBRARY_PACKAGES)("the published $name tarball", (library) => {
+  it("carries its build, its licence and what moving costs", () => {
+    const tree = extractedLibraries.get(library.name) ?? "";
+    const listed = run(
+      "find",
+      [".", "-type", "f", "-not", "-path", "./node_modules/*"],
+      tree,
+    )
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => line.replace(/^\.\//u, ""))
+      .sort();
+
+    // A published package whose licence is not in the tarball is not
+    // readable source to whoever received it, and wordpress.org's GPL
+    // compatibility is a claim about what the bundle contains.
+    expect(listed).toContain("LICENSE");
+    expect(listed).toContain("README.md");
+    expect(listed).toContain("CHANGELOG.md");
+    expect(listed).toContain("package.json");
+    expect(listed).toContain(library.entry);
+    expect(listed).toContain(library.entry.replace(/\.js$/u, ".d.ts"));
+  });
+
+  it("is published publicly, by its own manifest", () => {
+    const tree = extractedLibraries.get(library.name) ?? "";
+    const manifest = JSON.parse(
+      readFileSync(path.join(tree, "package.json"), "utf8"),
+    ) as { publishConfig?: { access?: string }; private?: boolean };
+
+    // The scope is private by default on npm, so a scoped package without
+    // this publishes nothing and says it published.
+    expect(manifest.publishConfig?.access).toBe("public");
+    expect(manifest.private).toBeUndefined();
+  });
+
+  it(
+    "imports by name, through `exports`, under a real node",
+    () => {
+      writeFileSync(
+        path.join(consumerRoot, `probe-${library.directory.split("/")[1]}.mjs`),
+        `const module = await import(${JSON.stringify(library.name)});
+if (Object.keys(module).length === 0) {
+  throw new Error("the package exported nothing");
+}
+`,
+      );
+
+      expect(() =>
+        run(
+          "node",
+          [`probe-${library.directory.split("/")[1]}.mjs`],
+          consumerRoot,
+        ),
+      ).not.toThrow();
+    },
+    CONSUMER_TIMEOUT,
+  );
+});
+
+/**
+ * The three publish as one number, and the tarball is where that is provable.
+ * pnpm rewrites `workspace:*` to the version it packed, so a release that
+ * moved one package and not another leaves `capture-core` depending on an
+ * `event-contract` that is either unpublished or a different envelope — and
+ * the registry does not take a version back.
+ */
+it("pins capture-core to the exact event-contract it was built against", () => {
+  const core = extractedLibraries.get("@tracelog/capture-core") ?? "";
+  const manifest = JSON.parse(
+    readFileSync(path.join(core, "package.json"), "utf8"),
+  ) as { version: string; dependencies?: Record<string, string> };
+  const pinned = manifest.dependencies?.["@tracelog/event-contract"];
+
+  expect(pinned).toMatch(/^\d+\.\d+\.\d+$/u);
+  expect(pinned).toBe(manifest.version);
 });
