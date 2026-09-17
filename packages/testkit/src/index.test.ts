@@ -1,4 +1,4 @@
-import type { Clock } from "@tracelog/config";
+import type { Clock } from "@tracelog/capture-core";
 import {
   eventBatchSchema,
   MAX_BATCH_BYTES,

@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -32,16 +32,33 @@ const contractPath = path.join(
   workspaceDirectory,
   "packages/event-contract/dist/index.js",
 );
-const [clockSource, coreSource, webSource, contract] = await Promise.all([
-  readFile(
-    path.join(workspaceDirectory, "packages/config/dist/clock.js"),
-    "utf8",
-  ),
-  readFile(
-    path.join(workspaceDirectory, "packages/capture-core/dist/index.js"),
-    "utf8",
-  ),
-  readFile(path.join(distributionDirectory, "index.js"), "utf8"),
+/**
+ * Every module a package emitted, never a hand-written list: a module left out
+ * is not a build failure, it is an identifier the bundle references and never
+ * defines — a `ReferenceError` on the customer's page, and only at the call
+ * that reaches it. `index.js` goes last because it is the entry every other
+ * module is imported by; the rest are ordered by name, which is enough while
+ * no module reads another at module scope.
+ */
+async function emittedModules(directory) {
+  const names = (await readdir(directory))
+    .filter((name) => name.endsWith(".js") && !name.startsWith("tracelog."))
+    .sort((left, right) =>
+      left === "index.js"
+        ? 1
+        : right === "index.js"
+          ? -1
+          : left.localeCompare(right),
+    );
+  const sources = await Promise.all(
+    names.map((name) => readFile(path.join(directory, name), "utf8")),
+  );
+  return sources.join("\n");
+}
+
+const [coreSource, webSource, contract] = await Promise.all([
+  emittedModules(path.join(workspaceDirectory, "packages/capture-core/dist")),
+  emittedModules(distributionDirectory),
   import(pathToFileURL(contractPath).href),
 ]);
 
@@ -59,7 +76,7 @@ const constants = [
   `const MAX_CONTEXT_BYTES = ${JSON.stringify(contract.MAX_CONTEXT_BYTES)};`,
   `const MAX_ERROR_MESSAGE_BYTES = ${JSON.stringify(contract.MAX_ERROR_MESSAGE_BYTES)};`,
 ].join("\n");
-const runtime = [clockSource, constants, coreSource, webSource]
+const runtime = [constants, coreSource, webSource]
   .map((source) =>
     withoutExports(withoutImports(withoutSourceMaps(source))).trim(),
   )

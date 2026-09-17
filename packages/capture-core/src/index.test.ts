@@ -1,4 +1,3 @@
-import type { Clock } from "@tracelog/config";
 import { eventBatchSchema, MAX_BATCH_BYTES } from "@tracelog/event-contract";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +8,7 @@ import {
   type CaptureTransport,
   type DropCount,
   type TransportResponse,
+  type Clock,
 } from "./index.js";
 import type { Event } from "@tracelog/event-contract";
 
