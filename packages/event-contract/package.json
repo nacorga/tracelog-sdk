@@ -1,13 +1,41 @@
 {
   "name": "@tracelog/event-contract",
-  "version": "0.0.0",
-  "private": true,
+  "version": "1.0.0",
+  "description": "The TraceLog event envelope: one definition of the wire format, its limits and its schemas.",
+  "keywords": [
+    "conversion",
+    "conversion-tracking",
+    "schema",
+    "zod",
+    "wire-format"
+  ],
+  "homepage": "https://tracelog.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nacorga/tracelog-sdk.git",
+    "directory": "packages/event-contract"
+  },
+  "bugs": {
+    "url": "https://github.com/nacorga/tracelog-sdk/issues"
+  },
+  "license": "MIT",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

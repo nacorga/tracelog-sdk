@@ -1,0 +1,34 @@
+# Changelog
+
+Every published version of `@tracelog/capture-core`, and what changed for the
+artifact that binds it.
+
+Nothing here is an alias: there is no `latest`, so every integration names a
+version and needs somewhere to read what moving costs. Entries are written for
+whoever decides whether to change that version, not for whoever wrote the
+commit.
+
+**What the numbers mean.** The major changes when working code stops working: a
+removed or renamed export, a changed meaning for an argument, a new required
+option on what the host supplies, or a wire format the ingestion endpoint of
+the same release no longer accepts. Everything else is a minor or a patch.
+
+This package, `@tracelog/capture-web` and `@tracelog/event-contract` carry one
+number between them: the browser runtime's published bytes are this engine's
+bytes, so no version of one is not also a version of the others.
+
+## 1.0.0
+
+The first published engine, extracted from the monorepo TraceLog was built in
+and unchanged in behaviour by the extraction.
+
+**The surface.** `createCaptureEngine(options, ports)`, the `Clock` port it
+declares, and the types an artifact needs to bind it: `CaptureStorage`,
+`CaptureTransport`, `AcquisitionContext`, `ConversionOptions`, `InitOptions`.
+
+**No DOM and no browser global.** The package compiles without the DOM library
+and lint refuses `window` and `document` inside it, because it is what runs in
+sandboxes that have neither. That is the property the major number protects.
+
+**It reads no clock.** The host supplies one. A sandbox may not have a
+`Date` worth reading, and a test must be able to hand over a fixed instant.
