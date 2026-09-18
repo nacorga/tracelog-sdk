@@ -25,8 +25,8 @@ import { beforeAll, describe, expect, it } from "vitest";
  * import, or whose types do not resolve, costs that version number forever,
  * and there is no second chance to notice.
  *
- * Nothing else proves this. The reference application and the integrations
- * consume the package through a workspace link, which resolves `src/` and
+ * Nothing else proves this. The reference integration consumes the package
+ * through a workspace link, which resolves `src/` and
  * ignores `files`, `exports` and the hand-written `tracelog.d.ts` entirely —
  * so what every other suite exercises is precisely not what ships.
  *
@@ -65,8 +65,8 @@ const SURFACE = [
 
 /**
  * The other two published packages. `capture-web` is what a site installs, but
- * the artifacts under `integrations/` bind `capture-core` directly and
- * TraceLog's own ingestion validates against `event-contract`, so all three
+ * TraceLog's Shopify pixel binds `capture-core` directly and TraceLog's own
+ * ingestion validates against `event-contract`, so all three
  * are somebody else's dependency and all three are opened here.
  */
 const LIBRARY_PACKAGES = [
@@ -360,37 +360,6 @@ export const state: "unknown" | "granted" | "denied" = TraceLog.consent.state();
     CONSUMER_TIMEOUT,
   );
 
-  it("carries the pinned version into every file that repeats it", () => {
-    const config = JSON.parse(
-      readFileSync(path.join(root, "release-please-config.json"), "utf8"),
-    ) as {
-      packages: Record<string, { "extra-files"?: string[] }>;
-    };
-    const extraFiles =
-      config.packages["packages/capture-web"]?.["extra-files"] ?? [];
-
-    // Every surface that prints the version reads it from one generated
-    // constant, and release-please has to move that constant in the same
-    // commit that bumps the package — otherwise the repository names the
-    // previous version until somebody rebuilds, and no gate notices.
-    expect(extraFiles.length).toBeGreaterThan(0);
-
-    for (const file of extraFiles) {
-      // release-please resolves a leading slash against the repository and
-      // everything else against the package. Getting that backwards updates
-      // nothing and says nothing, so both halves are resolved here the same
-      // way and the file has to be there.
-      const resolved = file.startsWith("/")
-        ? path.join(root, file.slice(1))
-        : path.join(root, "packages/capture-web", file);
-
-      expect(existsSync(resolved), `${file} resolves to ${resolved}`).toBe(
-        true,
-      );
-      expect(readFileSync(resolved, "utf8")).toContain("x-release-please-");
-    }
-  });
-
   it("references no source map it does not ship", () => {
     const offenders = ["tracelog.esm.js", "tracelog.iife.js"].filter((file) =>
       run("cat", [path.join("dist", file)], extracted).includes(
@@ -410,8 +379,8 @@ export const state: "unknown" | "granted" | "denied" = TraceLog.consent.state();
  * The two packages nobody installs by accident, and the integrations and the
  * door depend on.
  * `capture-web` is checked above the way a site uses it; these are checked the
- * way the artifacts under `integrations/` and TraceLog's own ingestion use
- * them — resolved by name, imported by a real `node`, and pinned to each
+ * way TraceLog's Shopify pixel and its ingestion use them — resolved by name,
+ * imported by a real `node`, and pinned to each
  * other.
  */
 describe.each(LIBRARY_PACKAGES)("the published $name tarball", (library) => {
@@ -490,4 +459,85 @@ it("pins capture-core to the exact event-contract it was built against", () => {
 
   expect(pinned).toMatch(/^\d+\.\d+\.\d+$/u);
   expect(pinned).toBe(manifest.version);
+});
+
+/**
+ * What release-please is told, read the way it reads it. A package missing
+ * from the linked group, or a manifest entry left behind, is a release pull
+ * request that bumps two of the three — merged and tagged before the publish
+ * job, which refuses versions that disagree, can say so.
+ */
+describe("the release configuration", () => {
+  const PUBLISHED = [
+    "packages/event-contract",
+    "packages/capture-core",
+    "packages/capture-web",
+  ];
+
+  const config = JSON.parse(
+    readFileSync(path.join(root, "release-please-config.json"), "utf8"),
+  ) as {
+    "separate-pull-requests"?: boolean;
+    plugins?: { type: string; components?: string[] }[];
+    packages: Record<string, { component?: string; "extra-files"?: string[] }>;
+  };
+  const released = JSON.parse(
+    readFileSync(path.join(root, ".release-please-manifest.json"), "utf8"),
+  ) as Record<string, string>;
+
+  function versionOf(directory: string): string {
+    return (
+      JSON.parse(
+        readFileSync(path.join(root, directory, "package.json"), "utf8"),
+      ) as { version: string }
+    ).version;
+  }
+
+  it("releases the three packages as one number, in one pull request", () => {
+    expect(Object.keys(config.packages).sort()).toEqual([...PUBLISHED].sort());
+    expect(config["separate-pull-requests"]).toBe(false);
+
+    const linked = config.plugins?.find(
+      (plugin) => plugin.type === "linked-versions",
+    );
+    const components = PUBLISHED.map(
+      (directory) => config.packages[directory]?.component,
+    );
+
+    expect([...(linked?.components ?? [])].sort()).toEqual(
+      [...components].sort(),
+    );
+
+    const versions = PUBLISHED.map((directory) => versionOf(directory));
+    expect(new Set(versions).size).toBe(1);
+    expect(PUBLISHED.map((directory) => released[directory])).toEqual(versions);
+  });
+
+  it("carries the pinned version into every file that repeats it", () => {
+    for (const directory of PUBLISHED) {
+      const extraFiles = config.packages[directory]?.["extra-files"] ?? [];
+
+      // Each README prints the exact version to install, and release-please
+      // has to move it in the same commit that bumps the package — otherwise
+      // the page names the previous version and no gate notices.
+      expect(extraFiles.length, directory).toBeGreaterThan(0);
+
+      for (const file of extraFiles) {
+        // release-please resolves a leading slash against the repository and
+        // everything else against the package. Getting that backwards updates
+        // nothing and says nothing, so both halves are resolved here the same
+        // way and the file has to be there.
+        const resolved = file.startsWith("/")
+          ? path.join(root, file.slice(1))
+          : path.join(root, directory, file);
+
+        expect(existsSync(resolved), `${file} resolves to ${resolved}`).toBe(
+          true,
+        );
+        const source = readFileSync(resolved, "utf8");
+        expect(source).toContain("x-release-please-");
+        expect(source).toContain(versionOf(directory));
+      }
+    }
+  });
 });

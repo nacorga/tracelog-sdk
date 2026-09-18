@@ -1,0 +1,315 @@
+name: Release
+
+# One path to a release, and it starts with a merge to `main`.
+#
+# Both halves are switched off by one repository variable, `SDK_PUBLISH`, so
+# until it is set, with the npm credential beside it, a merge to `main`
+# produces nothing here at all — no pull request, no branch, no tag.
+#
+# release-please reads the conventional commits that touched the three
+# packages and keeps one pull request open with the next version and the
+# changelog entries it would write. The `linked-versions` plugin holds
+# `event-contract`, `capture-core` and `capture-web` at one number, because
+# the bytes `capture-web` publishes are the other two's bytes. Merging that
+# pull request is the decision to release: it bumps the three, writes each
+# CHANGELOG.md, and tags `<component>@<version>`. Nothing else creates those
+# tags, because a second way to publish is a way for the manifests and npm to
+# disagree.
+#
+# The publish half then runs against that same commit. One immutable version,
+# and nothing that resolves to "whatever is newest": not an npm `latest`
+# dist-tag, not a `v/latest/` path on the CDN. npm cannot publish without a
+# dist-tag, so each version carries its own, `release-<version>`, which names
+# exactly that version and nothing else. A published version is never
+# overwritten.
+#
+# The CDN goes first and npm last, and the order is the whole design. Both
+# sides are immutable, so a run that completes one and fails the other cannot
+# be undone, only finished — and only one of the two failures can be finished.
+# A CDN path with no version on npm is invisible: nothing resolves it, and
+# re-running this job repairs it, because an object already carrying these
+# exact bytes is not an error. A version on npm whose script tag answers 404
+# is already in somebody else's page, and no re-run takes it back.
+#
+# `workflow_dispatch` publishes whatever version the packages currently
+# declare, for the two cases the merge path cannot cover: `1.0.0`, which no
+# release pull request ever proposed, and a release whose publish failed after
+# its merge tagged it. It cannot invent a version — the manifests still decide
+# that — and it refuses a version already complete on npm.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # `SDK_PUBLISH` gates this half too, and not only the publish below: a
+  # release pull request nobody can complete is worse than none. Closed, it
+  # comes back on the next push, so it accumulates as noise on a branch that is
+  # supposed to be quiet, and merging it would tag a version that publishing is
+  # switched off for.
+  #
+  # Nothing is lost by waiting. release-please keeps no state of its own: it
+  # derives the next version and the changelog from git, back to
+  # `bootstrap-sha`, so the first run after the switch is thrown covers
+  # everything accumulated in one pull request.
+  version:
+    # A repository variable, not an environment one: a job's `if` is decided
+    # before the job enters its environment, so a switch kept in `production`
+    # would read as empty here and keep both jobs skipped after it was thrown.
+    if: github.event_name == 'push' && vars.SDK_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    # The environment holds the two secrets this workflow reads. Its only rule
+    # is a branch policy naming `main` — no reviewer, no wait — so a secret
+    # that can publish is reachable from no other branch.
+    environment: production
+    permissions:
+      contents: read
+    outputs:
+      released: ${{ steps.release.outputs.releases_created }}
+    steps:
+      # A pull request opened with the workflow's own token triggers no
+      # workflow, so the release pull request would carry no checks, and on a
+      # branch that requires them it could never merge. The app's token opens
+      # it as somebody CI answers to.
+      # Pinned to a commit, because this step is handed the app's private key.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Like `version`, this skips rather than fails until `SDK_PUBLISH` is set. A
+  # release that tagged and then failed to publish is the one state worth
+  # designing against: the version would exist in the repository and nowhere a
+  # customer can reach.
+  publish:
+    needs: version
+    if: >-
+      always() && vars.SDK_PUBLISH == 'true'
+      && (needs.version.outputs.released == 'true'
+      || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      # OIDC, twice: the AWS role that may write the SDK bucket and nothing
+      # else, and npm's provenance attestation, which binds each version to
+      # this run.
+      id-token: write
+      contents: read
+    env:
+      CDN_BUCKET: ${{ vars.SDK_BUCKET }}
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      # A role of its own, scoped to the SDK bucket. This workflow runs in a
+      # public repository, and the role that writes the product's
+      # infrastructure is not one it should be able to assume.
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_SDK_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # The version is read from the packages rather than from a tag: this run
+      # is the merge release-please tagged, so the files are the release. The
+      # three must agree, because they publish as one number.
+      - name: Read the released version
+        id: release
+        run: |
+          version=""
+          for name in event-contract capture-core capture-web; do
+            declared=$(node -p "require('./packages/$name/package.json').version")
+            if [ -z "$version" ]; then
+              version="$declared"
+            elif [ "$declared" != "$version" ]; then
+              echo "@tracelog/$name declares $declared, not $version. The three publish as one number." >&2
+              exit 1
+            fi
+          done
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version"
+
+      # `capture-web` publishes last, so it being on npm means the release is
+      # complete and there is nothing left to finish. That ends the run before
+      # anything is built. A partial release — `event-contract` published and
+      # the rest not — is finished by running this job again; the publish step
+      # is what tells the two apart.
+      #
+      # `head-bucket` is not a safety check — the order below is what makes
+      # this job safe — it is the difference between failing in five seconds
+      # and failing after a full build. It needs `s3:ListBucket`, which is
+      # also what makes a 404 from the upload step honest: without it S3
+      # answers a missing key with 403.
+      - name: Refuse to release a version that is already complete on npm
+        run: |
+          version="${{ steps.release.outputs.version }}"
+          if npm view "@tracelog/capture-web@$version" version >/dev/null 2>&1; then
+            echo "@tracelog/capture-web@$version is already published." >&2
+            exit 1
+          fi
+          aws s3api head-bucket --bucket "$CDN_BUCKET"
+
+      # The four gates, over the whole repository: everything in it can reach
+      # a published byte, and `tools/sdk-package.test.ts` opens the three
+      # tarballs and uses them the way a stranger does.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      # An object already at this key is not automatically a refusal, because
+      # this step running twice is how the run before it gets finished. It is
+      # a refusal when the bytes differ: one version, two runtimes, on the one
+      # path a customer pinned and cannot re-point. The comparison is honest
+      # because the build is reproducible — the bundle is a concatenation of
+      # already-emitted files with no clock in it — and because the file is
+      # one part, so S3's ETag is its MD5 rather than a digest of digests.
+      - name: Upload the immutable CDN path
+        run: |
+          version="${{ steps.release.outputs.version }}"
+          key="v/$version/tracelog.js"
+          file=packages/capture-web/dist/tracelog.iife.js
+
+          # stdout is the answer and stderr the reason, kept apart: a warning
+          # on stderr must never become part of the ETag compared below.
+          if etag=$(aws s3api head-object --bucket "$CDN_BUCKET" --key "$key" \
+              --query ETag --output text 2>"$RUNNER_TEMP/head-object.err"); then
+            present=yes
+          else
+            case "$(cat "$RUNNER_TEMP/head-object.err")" in
+              *404*|*"Not Found"*) present=no ;;
+              *)
+                cat "$RUNNER_TEMP/head-object.err" >&2
+                echo "The CDN could not be read, so whether $key is there is unknown." >&2
+                exit 1 ;;
+            esac
+          fi
+
+          if [ "$present" = no ]; then
+            aws s3 cp "$file" "s3://$CDN_BUCKET/$key" \
+              --content-type application/javascript \
+              --cache-control "public, max-age=31536000, immutable"
+            echo "Uploaded cdn.tracelog.io/$key"
+            exit 0
+          fi
+
+          etag=${etag//\"/}
+          case "$etag" in
+            *-*)
+              echo "cdn.tracelog.io/$key was uploaded in parts, so its ETag is a digest of digests and not this file's checksum. Compare it by hand." >&2
+              exit 1 ;;
+          esac
+
+          if [ "$etag" != "$(md5sum "$file" | cut -d' ' -f1)" ]; then
+            echo "cdn.tracelog.io/$key exists and is not these bytes. One version cannot be two runtimes; release the next version instead." >&2
+            exit 1
+          fi
+          echo "cdn.tracelog.io/$key is already these exact bytes, left as it is."
+
+      # Last, because this is the half no re-run can take back, and in
+      # dependency order: pnpm writes the exact `event-contract` version into
+      # `capture-core`'s manifest when it packs, so publishing `capture-core`
+      # first would hand its installers a 404.
+      #
+      # Everything is decided before anything is published, so a refusal
+      # leaves the registry as it found it. A package already on npm at this
+      # version is the run before this one, finished halfway: it is left alone
+      # when its bytes are these bytes — `pnpm pack` is reproducible, and npm
+      # records the tarball's SHA-1 — and refused when they are not.
+      #
+      # A `latest` dist-tag lets a consumer resolve a version without naming
+      # one, so a package carrying one is refused before its publish rather
+      # than reported after it. npm may set `latest` itself when a package's
+      # first version arrives, `--tag` or not, which is why each publish prints
+      # the dist-tags it ends with: on the first release, read them.
+      #
+      # `NPM_CONFIG_PROVENANCE` has npm sign an attestation binding each
+      # version to this run and this public repository; `repository.url` in
+      # each manifest is what npm matches it against.
+      - name: Publish to npm, in dependency order
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          version="${{ steps.release.outputs.version }}"
+          pending=""
+
+          for name in event-contract capture-core capture-web; do
+            package="@tracelog/$name"
+            staging=$(mktemp -d)
+            pnpm --filter "$package" pack --pack-destination "$staging" >/dev/null
+            packed=$(sha1sum "$staging"/*.tgz | cut -d' ' -f1)
+
+            # stdout only: npm warns on stderr, on every command, about any
+            # `.npmrc` key it does not know, and a warning inside the value
+            # would make identical bytes compare as different.
+            if published=$(npm view "$package@$version" dist.shasum 2>"$RUNNER_TEMP/view.err"); then
+              :
+            else
+              case "$(cat "$RUNNER_TEMP/view.err")" in
+                *E404*) published="" ;;
+                *)
+                  cat "$RUNNER_TEMP/view.err" >&2
+                  echo "The registry could not be read, so whether $package@$version exists is unknown." >&2
+                  exit 1 ;;
+              esac
+            fi
+
+            if [ -n "$published" ]; then
+              if [ "$published" != "$packed" ]; then
+                echo "$package@$version is on npm and is not these bytes. One version cannot be two packages; release the next version instead." >&2
+                exit 1
+              fi
+              echo "$package@$version is already these exact bytes, left as it is."
+              continue
+            fi
+
+            # Read from the public document rather than `npm dist-tag ls`: for
+            # a scoped package that does not exist yet, the dist-tag endpoint
+            # answers 401 rather than 404, and the first release would stop
+            # here on a question with an answer.
+            if latest=$(npm view "$package" dist-tags.latest 2>"$RUNNER_TEMP/view.err"); then
+              :
+            else
+              case "$(cat "$RUNNER_TEMP/view.err")" in
+                *E404*) latest="" ;;
+                *)
+                  cat "$RUNNER_TEMP/view.err" >&2
+                  echo "The registry could not be read, so whether $package has a latest dist-tag is unknown." >&2
+                  exit 1 ;;
+              esac
+            fi
+            if [ -n "$latest" ]; then
+              echo "$package has a latest dist-tag, at $latest; every consumer must pin a version." >&2
+              exit 1
+            fi
+
+            pending="$pending $name"
+          done
+
+          for name in $pending; do
+            package="@tracelog/$name"
+            pnpm --filter "$package" publish \
+              --no-git-checks --access public --tag "release-$version"
+            echo "dist-tags of $package after publishing $version:"
+            npm dist-tag ls "$package"
+          done

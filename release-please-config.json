@@ -1,50 +1,42 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "separate-pull-requests": true,
+  "release-type": "node",
+  "include-component-in-tag": true,
+  "include-v-in-tag": false,
+  "tag-separator": "@",
+  "separate-pull-requests": false,
+  "bootstrap-sha": "f1ec5e90f61ec3833ba0fe38a90abe399d7dff6a",
+  "changelog-sections": [
+    { "type": "feat", "section": "Added" },
+    { "type": "fix", "section": "Fixed" },
+    { "type": "perf", "section": "Fixed" },
+    { "type": "refactor", "section": "Changed" },
+    { "type": "docs", "hidden": true },
+    { "type": "chore", "hidden": true },
+    { "type": "test", "hidden": true }
+  ],
+  "plugins": [
+    {
+      "type": "linked-versions",
+      "groupName": "tracelog-sdk",
+      "components": ["event-contract", "capture-core", "capture-web"]
+    }
+  ],
   "packages": {
-    "packages/capture-web": {
-      "release-type": "node",
-      "component": "capture-web",
-      "include-component-in-tag": true,
-      "include-v-in-tag": false,
-      "tag-separator": "@",
+    "packages/event-contract": {
+      "component": "event-contract",
       "changelog-path": "CHANGELOG.md",
-      "changelog-sections": [
-        {
-          "type": "feat",
-          "section": "Added"
-        },
-        {
-          "type": "fix",
-          "section": "Fixed"
-        },
-        {
-          "type": "perf",
-          "section": "Fixed"
-        },
-        {
-          "type": "refactor",
-          "section": "Changed"
-        },
-        {
-          "type": "docs",
-          "hidden": true
-        },
-        {
-          "type": "chore",
-          "hidden": true
-        },
-        {
-          "type": "test",
-          "hidden": true
-        }
-      ],
-      "bootstrap-sha": "f438d5f5c6230f93722a2fde1ba9f16034503920",
-      "extra-files": [
-        "README.md",
-        "/apps/web/src/generated/capture-version.ts",
-        "/apps/site/src/generated/capture-version.ts"
-      ]
+      "extra-files": ["README.md"]
+    },
+    "packages/capture-core": {
+      "component": "capture-core",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": ["README.md"]
+    },
+    "packages/capture-web": {
+      "component": "capture-web",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": ["README.md"]
     }
   }
 }

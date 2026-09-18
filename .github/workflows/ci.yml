@@ -1,0 +1,113 @@
+name: CI
+
+# A push to a branch with an open pull request would fire this workflow twice,
+# once per event, for identical work. Restricting `push` to the default branch
+# is what removes the duplicate: a branch is covered by its pull request, and
+# `main` is covered by the push that lands on it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Superseding runs on the same pull request: pushing a fix while the previous
+# commit is still building leaves the older run pointless. It is cancelled on
+# the commit it belongs to, never on the one being merged.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  # The messages themselves, because a release is computed from them. A subject
+  # release-please cannot parse is a version that silently never happens, and a
+  # `feat` typed as `fix` is a minor published as a patch on packages every
+  # consumer pins by hand. The local hook checks the same rules; this is the
+  # one that cannot be skipped with `--no-verify`.
+  commits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole range being linted has to be present, and a shallow
+          # checkout carries one commit.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint the commits this run introduces
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A branch's first push reports an all-zero `before`, and there is no
+          # range to read from it. The commit that lands is checked by the pull
+          # request that carried it, or by the next push.
+          case "$BASE" in
+            ""|0000000000000000000000000000000000000000)
+              echo "No range to lint."; exit 0 ;;
+          esac
+          pnpm exec commitlint --from "$BASE" --to "${{ github.sha }}" --verbose
+
+  # The four gates, in the order a developer runs them.
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  # The declared browser floor (chromium, webkit, firefox —
+  # tools/sdk-browser-targets.mjs), run against the reference integration on
+  # every push.
+  sdk-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The browsers and every system library they need ship inside this image,
+    # so nothing here reaches for apt. The tag must match the
+    # `@playwright/test` version in examples/reference-nextjs/package.json
+    # exactly — Playwright refuses a browser build it did not ship with, and
+    # says "Executable doesn't exist at /ms-playwright/..." when they differ.
+    # Raise both together; `tools/ci-playwright-image.test.ts` compares them.
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @tracelog/reference-nextjs test:e2e
+        # Firefox refuses to start as root when $HOME belongs to somebody
+        # else, and in this image it does: the container's steps run as root
+        # while `/github/home` is owned by `pwuser`, so Firefox exits with
+        # "Running Nightly as root in a regular user's session is not
+        # supported" before a single test runs. `PNPM_HOME` is an absolute
+        # path, and the install has already happened by here, so moving $HOME
+        # for this step alone costs nothing else.
+        env:
+          HOME: /root
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: sdk-e2e-results
+          path: examples/reference-nextjs/test-results
+          retention-days: 7
