@@ -18,6 +18,6 @@
     "@tracelog/event-contract": "workspace:*"
   },
   "devDependencies": {
-    "@tracelog/config": "workspace:*"
+    "@tracelog/capture-core": "workspace:*"
   }
 }

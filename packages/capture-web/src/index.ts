@@ -8,7 +8,7 @@ import {
   type InitOptions,
   type TransportResponse,
 } from "@tracelog/capture-core";
-import { systemClock } from "@tracelog/config";
+import { systemClock } from "./clock.js";
 
 const WEB_PUBLIC_KEY_PATTERN = /^tl_pk_[a-z2-7]{26}$/;
 

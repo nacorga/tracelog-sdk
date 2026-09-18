@@ -9,8 +9,7 @@ integration needs somewhere to read what moving costs. Entries are written for
 whoever has to decide whether to change the version in their script tag, not
 for whoever wrote the commit.
 
-**What the numbers mean** — [foundations.md](../../docs/build/foundations.md)
-§ Versioning is the rule; in short, the major changes when working code stops
+**What the numbers mean** — the major changes when working code stops
 working: a removed or renamed method on the `TraceLog` object, a changed
 meaning for an argument, a new required option, or a wire format the ingestion
 endpoint of the same release no longer accepts. Everything else is a minor or a
