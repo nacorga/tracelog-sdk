@@ -30,7 +30,6 @@ Without a build step, the same runtime as a script tag:
 
 <!-- x-release-please-end -->
 
-
 One runtime, two forms: ESM with types for npm, and an IIFE on
 `globalThis.TraceLog` for the script tag. Both are exercised on every browser of
 the floor before a release.
@@ -61,14 +60,14 @@ visitors nothing.
 
 That is all of it, and it is what the major version protects.
 
-| Call                                | Does                                                              |
-| ----------------------------------- | ----------------------------------------------------------------- |
-| `TraceLog.init(options)`            | Configures the runtime. `key` is the project's public key.        |
-| `TraceLog.consent.grant()`          | Allows capture. Queued delivery begins.                           |
-| `TraceLog.consent.deny()`           | Keeps the runtime inert.                                          |
-| `TraceLog.consent.state()`          | `"unknown" \| "granted" \| "denied"`.                             |
-| `TraceLog.step(name, context?)`     | A declared step of the conversion path.                           |
-| `TraceLog.conversion(name, opts)`   | A declared conversion. `opts.identifier` is its stable identifier. |
+| Call                              | Does                                                               |
+| --------------------------------- | ------------------------------------------------------------------ |
+| `TraceLog.init(options)`          | Configures the runtime. `key` is the project's public key.         |
+| `TraceLog.consent.grant()`        | Allows capture. Queued delivery begins.                            |
+| `TraceLog.consent.deny()`         | Keeps the runtime inert.                                           |
+| `TraceLog.consent.state()`        | `"unknown" \| "granted" \| "denied"`.                              |
+| `TraceLog.step(name, context?)`   | A declared step of the conversion path.                            |
+| `TraceLog.conversion(name, opts)` | A declared conversion. `opts.identifier` is its stable identifier. |
 
 `init` also accepts `mode: "verification"`, which a distributed platform artifact
 declares for its platform's own test order. A site's own snippet never sets it —
