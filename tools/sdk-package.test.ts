@@ -17,8 +17,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 /**
  * The published tarball, opened and used the way a stranger uses it.
  *
- * `@tracelog/capture-web` is the one artifact somebody else installs, and
- * [foundations.md] § Versioning says a published version is never overwritten
+ * The SDK's three packages are what somebody else installs — a site takes
+ * `@tracelog/capture-web`, the integrations bind `capture-core`, ingestion
+ * validates against `event-contract` — and [foundations.md] § Versioning says
+ * a published version is never overwritten
  * — the release job refuses before it uploads. So a tarball that does not
  * import, or whose types do not resolve, costs that version number forever,
  * and there is no second chance to notice.
@@ -405,7 +407,8 @@ export const state: "unknown" | "granted" | "denied" = TraceLog.consent.state();
 });
 
 /**
- * The two packages nobody installs by accident, and everything depends on.
+ * The two packages nobody installs by accident, and the integrations and the
+ * door depend on.
  * `capture-web` is checked above the way a site uses it; these are checked the
  * way the artifacts under `integrations/` and TraceLog's own ingestion use
  * them — resolved by name, imported by a real `node`, and pinned to each

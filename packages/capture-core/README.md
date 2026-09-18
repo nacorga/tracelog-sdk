@@ -1,20 +1,21 @@
 # @tracelog/capture-core
 
 The TraceLog capture engine, with no DOM and no browser global. It is what a
-platform artifact binds inside a sandbox that has neither — a Shopify web
-pixel, a WordPress plugin's bridge — and what
+platform artifact binds inside a sandbox that has neither — TraceLog's Shopify
+web pixel is one — and what
 [`@tracelog/capture-web`](https://www.npmjs.com/package/@tracelog/capture-web)
 is built from.
 
 **Most sites do not want this package.** A site you add a script to, or one
 with its own build, installs `@tracelog/capture-web`, which carries this engine
-inside it and adds the browser: storage, the network, the consent bridge and
-the clock. Reach for `capture-core` only where there is no browser to assume.
+inside it and adds the browser: its storage, its network, the page's errors and
+lifecycle, the verification handshake and the clock. Reach for `capture-core`
+only where there is no browser to assume.
 
 TraceLog is conversion intelligence you can verify: it checks the conversion
 path a project declares against the events TraceLog receives, watches every
 declared step every day, alerts when events for one stop arriving and names the
-figures that are incomplete. <https://tracelog.io>
+TraceLog figures that are incomplete. <https://tracelog.io>
 
 ## Install
 

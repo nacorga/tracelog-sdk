@@ -33,8 +33,9 @@ npm install @tracelog/event-contract@1.0.0
   bytes, the tolerance for a clock ahead of the server, and when an event is
   late rather than wrong.
 - **The schemas** — zod, for the envelope and every event in it, plus
-  `validateEventBatch`, which answers what was accepted and why the rest was
-  not.
+  `validateEventBatch`, which accepts a batch whole — flagging each event that
+  arrived late — or refuses it whole, with one classification the sender can
+  read.
 
 ## Licence
 
