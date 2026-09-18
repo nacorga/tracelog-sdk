@@ -1,0 +1,8 @@
+import { describe, it, expect } from "vitest";
+
+describe.only("the consent gate", () => {
+  it.skip("creates no identifier before a decision", () => {
+    expect(true).toBe(true);
+  });
+  it.todo("remembers a denial as one key");
+});

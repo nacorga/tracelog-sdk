@@ -1,0 +1,10 @@
+#!/bin/sh
+# Conventional commits, checked where they are written.
+#
+# `release-please` reads these messages to decide the next SDK version and to
+# write its changelog, so a subject it cannot parse is a release that silently
+# does not happen. CI checks the same rules and is the authority — this only
+# moves the answer from "ten minutes later, in red" to "now".
+#
+# Wired by the root `prepare` script, which points `core.hooksPath` here.
+exec npx --no-install commitlint --edit "$1"

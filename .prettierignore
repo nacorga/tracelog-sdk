@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.turbo/
+pnpm-lock.yaml
+
+# Written by release-please in the release pull request, from commit subjects,
+# and edited by hand there before merging. Checking its formatting would hold a
+# release on whitespace nobody chose.
+**/CHANGELOG.md

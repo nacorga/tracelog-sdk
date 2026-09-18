@@ -1,0 +1,5 @@
+export function handle(batch: unknown, payload: unknown): void {
+  console.info("accepted", batch);
+  console.error(`rejected ${JSON.stringify(payload)}`);
+  console.info("accepted", 3);
+}

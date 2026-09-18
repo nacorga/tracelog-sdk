@@ -1,0 +1,31 @@
+{
+  "name": "tracelog-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.12.4",
+  "engines": {
+    "node": "24.18.0",
+    "pnpm": "10.12.4"
+  },
+  "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
+    "build": "turbo run build",
+    "lint": "eslint . && prettier --check . .github",
+    "test": "vitest run --config vitest.config.ts && turbo run test",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "21.2.2",
+    "@commitlint/config-conventional": "21.2.2",
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.13.3",
+    "eslint": "9.39.5",
+    "prettier": "3.9.6",
+    "turbo": "2.10.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.10",
+    "yaml": "2.9.0"
+  }
+}
