@@ -11,6 +11,14 @@
     "first-party"
   ],
   "homepage": "https://tracelog.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nacorga/tracelog-sdk.git",
+    "directory": "packages/capture-web"
+  },
+  "bugs": {
+    "url": "https://github.com/nacorga/tracelog-sdk/issues"
+  },
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -22,7 +30,8 @@
       "types": "./dist/tracelog.d.ts",
       "default": "./dist/tracelog.esm.js"
     },
-    "./tracelog.iife.js": "./dist/tracelog.iife.js"
+    "./tracelog.iife.js": "./dist/tracelog.iife.js",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/tracelog.esm.js",
@@ -41,7 +50,6 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@tracelog/capture-core": "workspace:*",
-    "@tracelog/config": "workspace:*"
+    "@tracelog/capture-core": "workspace:*"
   }
 }

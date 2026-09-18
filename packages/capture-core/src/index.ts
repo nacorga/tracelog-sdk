@@ -1,4 +1,3 @@
-import type { Clock } from "@tracelog/config";
 import {
   EVENT_ENVELOPE_VERSION,
   MAX_BATCH_BYTES,
@@ -11,6 +10,16 @@ import {
 } from "@tracelog/event-contract";
 
 export type { Event, EventBatch } from "@tracelog/event-contract";
+
+/**
+ * Time is injected, and this package never reads it: it runs inside sandboxes
+ * with no ambient clock, so it declares the port and the caller supplies one.
+ * `capture-web` supplies the browser's; a platform artifact supplies its
+ * host's.
+ */
+export interface Clock {
+  now(): Date;
+}
 
 const CONSENT_KEY = "__tl.c";
 const SESSION_KEY = "__tl.s";
