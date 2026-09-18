@@ -116,10 +116,16 @@ jobs:
       # A role of its own, scoped to the SDK bucket. This workflow runs in a
       # public repository, and the role that writes the product's
       # infrastructure is not one it should be able to assume.
+      #
+      # The ARN is a secret rather than a variable because this repository's
+      # logs are public and a step's inputs are printed in them: a secret is
+      # masked there, and `mask-aws-account-id` masks the account wherever
+      # else it would appear.
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_SDK_PUBLISH_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_SDK_PUBLISH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          mask-aws-account-id: true
       - uses: pnpm/action-setup@v4
         with:
           version: 10.12.4
