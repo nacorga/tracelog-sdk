@@ -22,9 +22,15 @@ bytes, so no version of one is not also a version of the others.
 The first published engine, extracted from the monorepo TraceLog was built in
 and unchanged in behaviour by the extraction.
 
-**The surface.** `createCaptureEngine(options, ports)`, the `Clock` port it
-declares, and the types an artifact needs to bind it: `CaptureStorage`,
-`CaptureTransport`, `AcquisitionContext`, `ConversionOptions`, `InitOptions`.
+**The surface.** `createCaptureEngine(ports, acquisition)`, which returns a
+`CaptureRuntime` whose `engine` takes `init`, the consent calls, `step` and
+`conversion`; `PRE_CONSENT_CAP`, how many events wait in memory before
+consent; the `Clock` port; and the types that describe the rest —
+`CapturePorts`, `CaptureStorage`, `CaptureTransport`, `TransportRequest`,
+`TransportResponse`, `AcquisitionContext`, `InitOptions`, `ConversionOptions`,
+`ConsentState`, `CaptureEngine`, `DropCount`, `CircuitState`, and the
+envelope's `Event` and `EventBatch`. That is all of it, and it is what the
+major number protects.
 
 **No DOM and no browser global.** The package compiles without the DOM library
 and lint refuses `window` and `document` inside it, because it is what runs in

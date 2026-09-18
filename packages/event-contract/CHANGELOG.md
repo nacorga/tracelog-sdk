@@ -31,6 +31,6 @@ of tolerance for a clock ahead of the server's, and seven days after which an
 event is late rather than wrong.
 
 **The schemas**, in zod, for the envelope and each event in it, with
-`validateEventBatch` answering what was accepted and the class of every
-refusal — so a refusal has a reason the sender can read rather than a rejected
-count.
+`validateEventBatch`, which accepts a batch whole — flagging each event that
+arrived late — or refuses it whole with one classification, so a refusal has a
+reason the sender can read rather than a count.
