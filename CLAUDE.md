@@ -38,10 +38,14 @@ first. Never pick a side silently.
   pins `capture-core` to the exact `event-contract` it packed, and they
   publish in dependency order: `event-contract`, `capture-core`,
   `capture-web`.
-- **`EVENT_ENVELOPE_VERSION` is a major of all three, and a platform deploy
-  comes before it.** The platform widens the set it accepts and deploys; only
-  then does the SDK major and publish. A runtime pinned at an old version keeps
-  sending the old value for as long as a page holds it.
+- **`EVENT_ENVELOPE_VERSION` is a major of all three, and a release that
+  widens the door comes before it.** The versions the door accepts are
+  `event-contract`'s schemas, which the platform installs pinned, so it widens
+  only through a release here: first one whose schemas accept the old version
+  and the new while the runtime still writes the old, which the platform pins
+  and deploys; then the major. A runtime pinned at an old version keeps sending
+  the old value for as long as a page holds it, so the accepted set only ever
+  grows.
 - **A version is a fact, never an alias.** No `latest` on npm, no `v/latest/`
   on the CDN; a published version is never overwritten.
 
