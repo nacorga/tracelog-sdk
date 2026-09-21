@@ -22,13 +22,13 @@ as they are served.
 <!-- x-release-please-start-version -->
 
 ```bash
-npm install --save-exact @tracelog/capture-web@1.0.0
+npm install --save-exact @tracelog/capture-web@1.1.0
 ```
 
 Without a build step, the same runtime as a script tag:
 
 ```html
-<script src="https://cdn.tracelog.io/v/1.0.0/tracelog.js"></script>
+<script src="https://cdn.tracelog.io/v/1.1.0/tracelog.js"></script>
 ```
 
 <!-- x-release-please-end -->

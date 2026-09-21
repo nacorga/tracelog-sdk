@@ -18,6 +18,14 @@ carry it forward.
 This package, `@tracelog/capture-core` and `@tracelog/capture-web` carry one
 number between them.
 
+## [1.1.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@1.0.0...event-contract@1.1.0) (2026-09-21)
+
+
+### Added
+
+* **event-contract:** define the tag sighting report a conversion carries ([f4addc4](https://github.com/nacorga/tracelog-sdk/commit/f4addc4929cc322650fb68c8dd39ef54ec2fcd53))
+* the tag sighting in the page ([07b7e6d](https://github.com/nacorga/tracelog-sdk/commit/07b7e6d9bf58cca7fa775b585ad201c44a675ea0))
+
 ## 1.0.0
 
 The first published envelope, extracted from the monorepo TraceLog was built in

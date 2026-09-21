@@ -26,7 +26,7 @@ is the code you get.
 <!-- x-release-please-start-version -->
 
 ```bash
-npm install --save-exact @tracelog/capture-core@1.0.0
+npm install --save-exact @tracelog/capture-core@1.1.0
 ```
 
 <!-- x-release-please-end -->
