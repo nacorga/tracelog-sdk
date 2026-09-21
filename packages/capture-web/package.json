@@ -50,6 +50,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@tracelog/capture-core": "workspace:*"
+    "@tracelog/capture-core": "workspace:*",
+    "@tracelog/event-contract": "workspace:*"
   }
 }

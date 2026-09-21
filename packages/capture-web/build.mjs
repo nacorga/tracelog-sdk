@@ -63,11 +63,12 @@ const [coreSource, webSource, contract] = await Promise.all([
 ]);
 
 /**
- * Every value the core imports from the contract, inlined by name: the
- * import line is stripped below, so a constant missing here is a
+ * Every value the core and the web shell import from the contract, inlined by
+ * name: the import line is stripped below, so a constant missing here is a
  * ReferenceError on the customer's page, not a build failure. The bundle
- * inlines the numbers and never the schemas, because zod is not part of the
- * runtime a visitor loads.
+ * inlines the constants and never the schemas, because zod is not part of the
+ * runtime a visitor loads — the tag sighting's patterns travel as source
+ * strings, and the matcher builds its own `RegExp` from them.
  */
 const constants = [
   `const EVENT_ENVELOPE_VERSION = ${JSON.stringify(contract.EVENT_ENVELOPE_VERSION)};`,
@@ -75,6 +76,10 @@ const constants = [
   `const MAX_BATCH_EVENTS = ${JSON.stringify(contract.MAX_BATCH_EVENTS)};`,
   `const MAX_CONTEXT_BYTES = ${JSON.stringify(contract.MAX_CONTEXT_BYTES)};`,
   `const MAX_ERROR_MESSAGE_BYTES = ${JSON.stringify(contract.MAX_ERROR_MESSAGE_BYTES)};`,
+  `const MAX_TAG_SIGHTINGS = ${JSON.stringify(contract.MAX_TAG_SIGHTINGS)};`,
+  `const TAG_SIGHTINGS_CONTEXT_KEY = ${JSON.stringify(contract.TAG_SIGHTINGS_CONTEXT_KEY)};`,
+  `const TAG_ID_PATTERNS = ${JSON.stringify(contract.TAG_ID_PATTERNS)};`,
+  `const TAG_EVENT_PATTERN = ${JSON.stringify(contract.TAG_EVENT_PATTERN)};`,
 ].join("\n");
 const runtime = [constants, coreSource, webSource]
   .map((source) =>

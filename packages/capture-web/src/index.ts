@@ -9,6 +9,7 @@ import {
   type TransportResponse,
 } from "@tracelog/capture-core";
 import { systemClock } from "./clock.js";
+import { createTagSightingPort } from "./tag-sightings.js";
 
 const WEB_PUBLIC_KEY_PATTERN = /^tl_pk_[a-z2-7]{26}$/;
 
@@ -212,6 +213,7 @@ function init(options: WebInitOptions): void {
             }
           },
         },
+        sightings: createTagSightingPort(),
       },
       acquisition(),
     );

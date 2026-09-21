@@ -1,7 +1,9 @@
 # @tracelog/capture-web
 
 The TraceLog browser capture runtime. It captures the conversion path a project
-declares — each conversion and the steps preceding it — and nothing else.
+declares — each conversion and the steps preceding it — and, beside each
+conversion, which GA4, Meta and Google Ads tags the page requested; nothing
+else.
 
 TraceLog is Trustworthy Conversion Intelligence — conversion intelligence you
 can verify: it verifies the conversion path a project declares against the
@@ -86,6 +88,14 @@ type a name TraceLog already knows.
 The events your tracking plan declares, with their context. Not page views, not
 clicks, not scroll, not keystrokes. Errors are captured only when they occur
 inside the conversion path, attached to the step where they happened.
+
+Beside each conversion, which GA4, Meta and Google Ads tags the page requested
+just before and after it — the tag's kind, its id and, for Meta, the event —
+read from the browser's own record of the page's requests. Nothing else of
+those requests is kept. A conversion is held ten seconds so those requests can
+be seen, sent at once when the page is hidden — its report then says whether it
+was cut short — and never held in verification mode. Context keys beginning
+with `__tl.` are TraceLog's and are removed.
 
 Identity is first-party and per site: no cross-site tracking, no fingerprinting.
 An IP address is read once when the event arrives to derive a two-letter country
