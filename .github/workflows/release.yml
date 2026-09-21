@@ -3,8 +3,8 @@ name: Release
 # One path to a release, and it starts with a merge to `main`.
 #
 # Both halves are switched off by one repository variable, `SDK_PUBLISH`, so
-# until it is set, with the npm credential beside it, a merge to `main`
-# produces nothing here at all — no pull request, no branch, no tag.
+# until it is set, a merge to `main` produces nothing here at all — no pull
+# request, no branch, no tag.
 #
 # release-please reads the conventional commits that touched the three
 # packages and keeps one pull request open with the next version and the
@@ -102,14 +102,15 @@ jobs:
     timeout-minutes: 30
     environment: production
     permissions:
-      # OIDC, twice: the AWS role that may write the SDK bucket and nothing
-      # else, and npm's provenance attestation, which binds each version to
-      # this run.
+      # OIDC for everything this job authenticates as: the AWS role that may
+      # write the SDK bucket and nothing else, and npm's trusted publishing,
+      # which each package's settings bind to this workflow and the
+      # `production` environment — so no npm token is stored anywhere — and
+      # which signs the provenance attestation for each version.
       id-token: write
       contents: read
     env:
       CDN_BUCKET: ${{ vars.SDK_BUCKET }}
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       # A role of its own, scoped to the SDK bucket. This workflow runs in a
@@ -128,11 +129,13 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10.12.4
+      # No `registry-url`: it writes an `.npmrc` that reads a token from the
+      # environment, and there is none to read. npm's default registry is the
+      # one it publishes to.
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       # The version is read from the packages rather than from a tag: this run
       # is the merge release-please tagged, so the files are the release. The
@@ -242,6 +245,9 @@ jobs:
       # when its bytes are these bytes — `pnpm pack` is reproducible, and npm
       # records the tarball's SHA-1 — and refused when they are not.
       #
+      # The tarball compared is the tarball published: `npm publish` is handed
+      # the file `pnpm pack` wrote, and it is the npm CLI — Node 24 bundles
+      # npm 11 — that makes the OIDC exchange trusted publishing needs.
       # `NPM_CONFIG_PROVENANCE` has npm sign an attestation binding each
       # version to this run and this public repository; `repository.url` in
       # each manifest is what npm matches it against.
@@ -251,12 +257,14 @@ jobs:
         run: |
           version="${{ steps.release.outputs.version }}"
           pending=""
+          declare -A tarballs
 
           for name in event-contract capture-core capture-web; do
             package="@tracelog/$name"
             staging=$(mktemp -d)
             pnpm --filter "$package" pack --pack-destination "$staging" >/dev/null
-            packed=$(sha1sum "$staging"/*.tgz | cut -d' ' -f1)
+            tarballs[$name]=$(ls "$staging"/*.tgz)
+            packed=$(sha1sum "${tarballs[$name]}" | cut -d' ' -f1)
 
             # stdout only: npm warns on stderr, on every command, about any
             # `.npmrc` key it does not know, and a warning inside the value
@@ -286,6 +294,5 @@ jobs:
           done
 
           for name in $pending; do
-            package="@tracelog/$name"
-            pnpm --filter "$package" publish --no-git-checks --access public
+            npm publish "${tarballs[$name]}" --access public
           done
