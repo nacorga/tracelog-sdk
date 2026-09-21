@@ -4,12 +4,16 @@ import {
   MAX_BATCH_EVENTS,
   MAX_CONTEXT_BYTES,
   MAX_ERROR_MESSAGE_BYTES,
+  MAX_TAG_SIGHTINGS,
+  TAG_SIGHTINGS_CONTEXT_KEY,
   type Event,
   type EventBatch,
   type EventContext,
+  type TagSighting,
+  type TagSightingReport,
 } from "@tracelog/event-contract";
 
-export type { Event, EventBatch } from "@tracelog/event-contract";
+export type { Event, EventBatch, TagSighting } from "@tracelog/event-contract";
 
 /**
  * Time is injected, and this package never reads it: it runs inside sandboxes
@@ -25,6 +29,8 @@ const CONSENT_KEY = "__tl.c";
 const SESSION_KEY = "__tl.s";
 const ACTIVITY_KEY = "__tl.a";
 const QUEUE_KEY = "__tl.q";
+/** The namespace the runtime owns, in storage and in an event's context. */
+const RUNTIME_KEY_PREFIX = "__tl.";
 /**
  * How many events wait in memory before consent. A platform artifact that
  * buffers its own platform's events ahead of this engine holds the same line,
@@ -48,6 +54,31 @@ const PUBLIC_KEY_PATTERN = /^tl_pk_[a-z2-7]{26}$/;
 const MAX_IDENTIFIER_LENGTH = 256;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 const textEncoder = new TextEncoder();
+
+/**
+ * The tag sighting window around a conversion ([spec/capture.md] § Tag
+ * sightings). Ten seconds after is almost twice the longest hold measured:
+ * GA4 was measured holding a purchase 5.0 to 5.6 seconds.
+ */
+export const TAG_SIGHTING_BEFORE_MS = 30_000;
+export const TAG_SIGHTING_AFTER_MS = 10_000;
+
+export interface TagSightingPort {
+  /** Begin observing. Called once consent is granted; idempotent while started. */
+  start(): void;
+  /** Stop observing and forget what was seen; idempotent. */
+  stop(): void;
+  /** Whether the page's requests are being observed right now. */
+  observing(): boolean;
+  /**
+   * Every tag the page requested from `TAG_SIGHTING_BEFORE_MS` before `at` to
+   * `TAG_SIGHTING_AFTER_MS` after it, deduplicated by kind, id and event, in
+   * the order of each one's first request in that window — the engine cuts it
+   * to fit; null when it cannot answer, or its memory no longer reaches back
+   * to the window's start.
+   */
+  around(at: Date): TagSighting[] | null;
+}
 
 export type ConsentState = "unknown" | "granted" | "denied";
 
@@ -114,6 +145,8 @@ export interface CapturePorts {
   transport: CaptureTransport;
   storage: CaptureStorage;
   clock: Clock;
+  /** Absent where the host cannot see the page's requests: nothing is held. */
+  sightings?: TagSightingPort;
 }
 
 export interface DropCount {
@@ -244,7 +277,11 @@ function jsonContext(value: object | undefined): EventContext | undefined {
     ) {
       return undefined;
     }
-    return parsed as EventContext;
+    const context = parsed as EventContext;
+    for (const key of Object.keys(context)) {
+      if (key.startsWith(RUNTIME_KEY_PREFIX)) delete context[key];
+    }
+    return context;
   } catch {
     return undefined;
   }
@@ -275,6 +312,10 @@ function isConversionValid(options: ConversionOptions): boolean {
   );
 }
 
+function serializedBytes(value: unknown): number {
+  return textEncoder.encode(JSON.stringify(value)).byteLength;
+}
+
 interface BatchSelection {
   batch: EventBatch;
   /**
@@ -295,9 +336,7 @@ function batchFrom(events: Event[]): BatchSelection {
       v: EVENT_ENVELOPE_VERSION,
       events: [...selected, event],
     };
-    if (
-      textEncoder.encode(JSON.stringify(candidate)).byteLength > MAX_BATCH_BYTES
-    ) {
+    if (serializedBytes(candidate) > MAX_BATCH_BYTES) {
       if (selected.length === 0) {
         unsendable.push(event);
         continue;
@@ -318,7 +357,20 @@ export function createCaptureEngine(
   let config: Required<InitOptions> = { key: "", endpoint: "/v1/events" };
   let pending: PendingEvent[] = [];
   let lastDeclaredName: string | undefined;
-  let sending = false;
+  /**
+   * Every send in flight, by count and by the union of their event ids: a
+   * page hide sends alongside one rather than wait for it, so there can be
+   * two, and each must leave the other's events alone.
+   */
+  let sendsInFlight = 0;
+  const inFlight = new Set<string>();
+  /**
+   * The conversions this page emitted and holds for their tag sighting
+   * window: the instant each was emitted, and whether its report can be
+   * complete. In memory only — a held conversion is in the stored queue like
+   * any other, and a reload sends it as it is.
+   */
+  const held = new Map<string, { at: number; whole: boolean }>();
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
   let consecutiveFailures = 0;
   let circuit: CircuitState = "closed";
@@ -373,7 +425,12 @@ export function createCaptureEngine(
     writeQueue(ports.storage, queue);
   }
 
-  function emit(pendingEvent: PendingEvent): void {
+  /**
+   * `buffered` is a conversion made before consent was granted and emitted
+   * at the grant: its window is placed there, after the conversion itself,
+   * so its report is never complete.
+   */
+  function emit(pendingEvent: PendingEvent, buffered = false): void {
     if (!EVENT_NAME_PATTERN.test(pendingEvent.name)) {
       recordInvalidEvent();
       return;
@@ -413,8 +470,15 @@ export function createCaptureEngine(
     } else {
       const options = pendingEvent.options;
       const context = jsonContext(options.context);
+      const base = baseEvent(now, session.id);
+      if (
+        acquisition.mode !== "verification" &&
+        ports.sightings?.observing() === true
+      ) {
+        held.set(base.eventId, { at: now.getTime(), whole: !buffered });
+      }
       persistEvent({
-        ...baseEvent(now, session.id),
+        ...base,
         kind: "conversion",
         name: pendingEvent.name,
         identifier: options.identifier,
@@ -438,12 +502,88 @@ export function createCaptureEngine(
     emit(pendingEvent);
   }
 
-  async function flush(keepalive = false): Promise<void> {
-    if (!initialized || consentState !== "granted" || sending) return;
+  /**
+   * Gives each held conversion whose window has closed — or every one, at
+   * page hide — the report of what the port saw around it, and lets it go.
+   */
+  function release(all: boolean): void {
+    if (held.size === 0) return;
+    const now = ports.clock.now().getTime();
+    const due = [...held].filter(
+      ([, hold]) => all || now - hold.at >= TAG_SIGHTING_AFTER_MS,
+    );
+    if (due.length === 0) return;
 
     const queue = readQueue(ports.storage);
-    if (queue.events.length === 0 || !PUBLIC_KEY_PATTERN.test(config.key)) {
-      scheduleFlush(FLUSH_INTERVAL_MS);
+    let reported = false;
+    for (const [eventId, hold] of due) {
+      held.delete(eventId);
+      // Gone from the queue — sent by another tab, or dropped by overflow.
+      const event = queue.events.find(
+        (candidate) => candidate.eventId === eventId,
+      );
+      const answer =
+        event === undefined
+          ? null
+          : (ports.sightings?.around(new Date(hold.at)) ?? null);
+      if (event === undefined || answer === null) continue;
+      const report: TagSightingReport = {
+        complete:
+          hold.whole &&
+          now - hold.at >= TAG_SIGHTING_AFTER_MS &&
+          answer.length <= MAX_TAG_SIGHTINGS,
+        sightings: answer.slice(0, MAX_TAG_SIGHTINGS),
+      };
+      const context = {
+        ...event.context,
+        [TAG_SIGHTINGS_CONTEXT_KEY]: report,
+      };
+      if (serializedBytes(context) <= MAX_CONTEXT_BYTES) {
+        event.context = context;
+        reported = true;
+      }
+    }
+    if (reported) writeQueue(ports.storage, queue);
+  }
+
+  /** Until the earliest held conversion's window closes. */
+  function untilRelease(): number {
+    const now = ports.clock.now().getTime();
+    let earliest = Number.POSITIVE_INFINITY;
+    for (const hold of held.values()) {
+      earliest = Math.min(earliest, hold.at + TAG_SIGHTING_AFTER_MS);
+    }
+    return Math.max(0, earliest - now);
+  }
+
+  async function flush(keepalive = false): Promise<void> {
+    release(keepalive);
+    if (!initialized || consentState !== "granted") return;
+    if (sendsInFlight > 0 && !keepalive) return;
+
+    const queue = readQueue(ports.storage);
+    const ready = queue.events.filter(
+      (event) => !held.has(event.eventId) && !inFlight.has(event.eventId),
+    );
+    if (ready.length === 0 || !PUBLIC_KEY_PATTERN.test(config.key)) {
+      if (sendsInFlight === 0) {
+        scheduleFlush(
+          ready.length === 0 && held.size > 0
+            ? untilRelease()
+            : FLUSH_INTERVAL_MS,
+        );
+      }
+      return;
+    }
+
+    /**
+     * A page being hidden gets no later chance, so it sends what no send in
+     * flight carries at once, whatever the circuit's state, and the answer is
+     * read as any other's.
+     */
+    if (sendsInFlight > 0) {
+      const { batch } = batchFrom(ready);
+      if (batch.events.length > 0) await deliver(batch, true);
       return;
     }
 
@@ -456,7 +596,7 @@ export function createCaptureEngine(
       circuit = "half_open";
     }
 
-    const { batch, unsendable } = batchFrom(queue.events);
+    const { batch, unsendable } = batchFrom(ready);
     if (unsendable.length > 0) {
       const dropped = new Set(unsendable.map((event) => event.eventId));
       queue.events = queue.events.filter(
@@ -470,7 +610,18 @@ export function createCaptureEngine(
       return;
     }
 
-    sending = true;
+    await deliver(batch, keepalive);
+  }
+
+  /**
+   * One send, and its answer. It removes from the stored queue exactly what
+   * it carried, by its own read, filter and write at the moment it settles,
+   * so a send beside it keeps what it delivered.
+   */
+  async function deliver(batch: EventBatch, keepalive: boolean): Promise<void> {
+    const carried = new Set(batch.events.map((event) => event.eventId));
+    for (const eventId of carried) inFlight.add(eventId);
+    sendsInFlight += 1;
     try {
       const response = await ports.transport.send({
         endpoint: config.endpoint,
@@ -481,9 +632,8 @@ export function createCaptureEngine(
 
       if (response.status >= 200 && response.status < 300) {
         const currentQueue = readQueue(ports.storage);
-        const delivered = new Set(batch.events.map((event) => event.eventId));
         currentQueue.events = currentQueue.events.filter(
-          (event) => !delivered.has(event.eventId),
+          (event) => !carried.has(event.eventId),
         );
         if ((response.rejected ?? 0) > 0) {
           addDrop(currentQueue, "server_rejected", response.rejected);
@@ -509,9 +659,8 @@ export function createCaptureEngine(
         response.status !== 429
       ) {
         const currentQueue = readQueue(ports.storage);
-        const rejected = new Set(batch.events.map((event) => event.eventId));
         currentQueue.events = currentQueue.events.filter(
-          (event) => !rejected.has(event.eventId),
+          (event) => !carried.has(event.eventId),
         );
         addDrop(currentQueue, "server_rejected", batch.events.length);
         writeQueue(ports.storage, currentQueue);
@@ -540,7 +689,8 @@ export function createCaptureEngine(
         );
       }
     } finally {
-      sending = false;
+      for (const eventId of carried) inFlight.delete(eventId);
+      sendsInFlight -= 1;
     }
   }
 
@@ -556,16 +706,20 @@ export function createCaptureEngine(
         storedConsent === "granted" || storedConsent === "denied"
           ? storedConsent
           : "unknown";
-      if (consentState === "granted") scheduleFlush(FLUSH_INTERVAL_MS);
+      if (consentState === "granted") {
+        ports.sightings?.start();
+        scheduleFlush(FLUSH_INTERVAL_MS);
+      }
     },
     consent: {
       grant() {
         if (!initialized) return;
         consentState = "granted";
         safeSet(ports.storage, CONSENT_KEY, "granted");
+        ports.sightings?.start();
         const buffered = pending;
         pending = [];
-        for (const pendingEvent of buffered) emit(pendingEvent);
+        for (const pendingEvent of buffered) emit(pendingEvent, true);
         scheduleFlush(FLUSH_INTERVAL_MS);
       },
       deny() {
@@ -573,6 +727,8 @@ export function createCaptureEngine(
         consentState = "denied";
         pending = [];
         lastDeclaredName = undefined;
+        ports.sightings?.stop();
+        held.clear();
         safeSet(ports.storage, CONSENT_KEY, "denied");
         safeRemove(ports.storage, SESSION_KEY);
         safeRemove(ports.storage, ACTIVITY_KEY);
