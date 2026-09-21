@@ -12,14 +12,15 @@ incomplete, and never makes up a number.
 
 ## Install
 
-**Every integration names a version.** There is no `latest` on npm and no
-`v/latest/` on the CDN, so the version you pin is the bytes you get, for as long
+**Every integration names a version, exactly.** Install with `--save-exact`,
+so your manifest names this version rather than a range, and there is no
+`v/latest/` on the CDN: the version you pin is the bytes you get, for as long
 as they are served.
 
 <!-- x-release-please-start-version -->
 
 ```bash
-npm install @tracelog/capture-web@1.0.0
+npm install --save-exact @tracelog/capture-web@1.0.0
 ```
 
 Without a build step, the same runtime as a script tag:

@@ -17,11 +17,10 @@ name: Release
 # disagree.
 #
 # The publish half then runs against that same commit. One immutable version,
-# and nothing that resolves to "whatever is newest": not an npm `latest`
-# dist-tag, not a `v/latest/` path on the CDN. npm cannot publish without a
-# dist-tag, so each version carries its own, `release-<version>`, which names
-# exactly that version and nothing else. A published version is never
-# overwritten.
+# never overwritten, and no `v/latest/` path on the CDN. npm is the one place
+# an alias exists: the registry keeps a `latest` dist-tag on every package and
+# refuses to delete it, so it moves with each release, and what pins a
+# consumer is `--save-exact` in every install command TraceLog hands out.
 #
 # The CDN goes first and npm last, and the order is the whole design. Both
 # sides are immutable, so a run that completes one and fails the other cannot
@@ -243,12 +242,6 @@ jobs:
       # when its bytes are these bytes — `pnpm pack` is reproducible, and npm
       # records the tarball's SHA-1 — and refused when they are not.
       #
-      # A `latest` dist-tag lets a consumer resolve a version without naming
-      # one, so a package carrying one is refused before its publish rather
-      # than reported after it. npm may set `latest` itself when a package's
-      # first version arrives, `--tag` or not, which is why each publish prints
-      # the dist-tags it ends with: on the first release, read them.
-      #
       # `NPM_CONFIG_PROVENANCE` has npm sign an attestation binding each
       # version to this run and this public repository; `repository.url` in
       # each manifest is what npm matches it against.
@@ -289,33 +282,10 @@ jobs:
               continue
             fi
 
-            # Read from the public document rather than `npm dist-tag ls`: for
-            # a scoped package that does not exist yet, the dist-tag endpoint
-            # answers 401 rather than 404, and the first release would stop
-            # here on a question with an answer.
-            if latest=$(npm view "$package" dist-tags.latest 2>"$RUNNER_TEMP/view.err"); then
-              :
-            else
-              case "$(cat "$RUNNER_TEMP/view.err")" in
-                *E404*) latest="" ;;
-                *)
-                  cat "$RUNNER_TEMP/view.err" >&2
-                  echo "The registry could not be read, so whether $package has a latest dist-tag is unknown." >&2
-                  exit 1 ;;
-              esac
-            fi
-            if [ -n "$latest" ]; then
-              echo "$package has a latest dist-tag, at $latest; every consumer must pin a version." >&2
-              exit 1
-            fi
-
             pending="$pending $name"
           done
 
           for name in $pending; do
             package="@tracelog/$name"
-            pnpm --filter "$package" publish \
-              --no-git-checks --access public --tag "release-$version"
-            echo "dist-tags of $package after publishing $version:"
-            npm dist-tag ls "$package"
+            pnpm --filter "$package" publish --no-git-checks --access public
           done

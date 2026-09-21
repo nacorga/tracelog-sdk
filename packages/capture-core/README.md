@@ -19,13 +19,14 @@ TraceLog figures that are incomplete. <https://tracelog.io>
 
 ## Install
 
-**Every integration names a version.** There is no `latest` on npm, so the
-version you pin is the code you get.
+**Every integration names a version, exactly.** Install with `--save-exact`,
+so your manifest names this version rather than a range: the version you pin
+is the code you get.
 
 <!-- x-release-please-start-version -->
 
 ```bash
-npm install @tracelog/capture-core@1.0.0
+npm install --save-exact @tracelog/capture-core@1.0.0
 ```
 
 <!-- x-release-please-end -->
