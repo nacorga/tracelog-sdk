@@ -155,7 +155,11 @@ for (const format of ["esm", "iife"] as const) {
       );
       await installBuild(page, format);
       await driveReference(page, format, true);
-      await page.clock.fastForward(5_000);
+      // Every engine of the floor observes the page's requests, so the
+      // conversion is held for its tag sighting window — capture-core's
+      // `TAG_SIGHTING_AFTER_MS` — before it is sent ([spec/capture.md] § Tag
+      // sightings).
+      await page.clock.fastForward(10_000);
       await expect.poll(() => batches.length).toBe(1);
 
       const events = batches.flatMap((batch) => batch.events);

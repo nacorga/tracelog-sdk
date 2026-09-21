@@ -33,7 +33,8 @@ npm install --save-exact @tracelog/capture-core@1.0.0
 
 ## What it expects you to supply
 
-The engine assumes nothing about its host, so the host supplies four things:
+The engine assumes nothing about its host, so the host supplies four things, and
+may supply a fifth:
 
 - **storage** — `getItem`, `setItem`, `removeItem`. A sandbox with no storage
   supplies an in-memory one; a denial is one remembered key.
@@ -41,6 +42,9 @@ The engine assumes nothing about its host, so the host supplies four things:
 - **a clock** — `now(): Date`. This package never reads the machine's, because
   in a sandbox there may not be one to read.
 - **the acquisition context** — referrer, campaign, landing page, device.
+- **tag sightings**, optionally — a `TagSightingPort` that reports which tags
+  the page requested around an instant. Without one, conversions are sent
+  unheld and report none.
 
 Consent comes first: before a consent decision the engine creates no
 identifier, no storage and no traffic.

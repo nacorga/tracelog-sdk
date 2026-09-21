@@ -36,6 +36,11 @@ npm install --save-exact @tracelog/event-contract@1.0.0
   `validateEventBatch`, which accepts a batch whole — flagging each event that
   arrived late — or refuses it whole, with one classification the sender can
   read.
+- **The tag sighting** — `tagSightingReportSchema`, the report a conversion's
+  context carries under `TAG_SIGHTINGS_CONTEXT_KEY` — the tags sighted, and
+  whether the report is complete — and the patterns its ids and events are held
+  to, as strings the runtime inlines. The envelope does not validate it; the
+  platform reads it, and a value that fails it is no report.
 
 ## Licence
 

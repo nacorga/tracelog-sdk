@@ -69,6 +69,9 @@ importers:
       '@tracelog/capture-core':
         specifier: workspace:*
         version: link:../capture-core
+      '@tracelog/event-contract':
+        specifier: workspace:*
+        version: link:../event-contract
 
   packages/event-contract:
     dependencies:
