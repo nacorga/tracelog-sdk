@@ -120,6 +120,50 @@ export const rejectionClassSchema = z.enum([
   "future_time",
 ]);
 
+/**
+ * The tag sighting: which GA4, Meta and Google Ads tags the page requested
+ * around a conversion, carried in that conversion's `context` under
+ * `TAG_SIGHTINGS_CONTEXT_KEY` ([spec/capture.md] § Tag sightings). The
+ * envelope does not validate it — `context` stays the free-form bag it is —
+ * so a platform pinned at any 1.x accepts a conversion carrying it; the
+ * platform parses it with `tagSightingReportSchema`, and a value that fails
+ * is no report.
+ */
+export const TAG_SIGHTINGS_CONTEXT_KEY = "__tl.tags";
+export const MAX_TAG_SIGHTINGS = 16;
+export const tagSightingKinds = ["ga4", "meta", "google_ads"] as const;
+export type TagSightingKind = (typeof tagSightingKinds)[number];
+/** Source strings, so the bundle can inline them and both sides build one pattern. */
+export const TAG_ID_PATTERNS: Readonly<Record<TagSightingKind, string>> = {
+  ga4: "^G-[A-Z0-9]{4,15}$",
+  meta: "^[0-9]{6,20}$",
+  google_ads: "^AW-[0-9]{6,15}(?:/[A-Za-z0-9_-]{1,64})?$",
+};
+export const TAG_EVENT_PATTERN = "^[A-Za-z0-9_]{1,64}$";
+
+const tagId = (kind: TagSightingKind) =>
+  z.string().regex(new RegExp(TAG_ID_PATTERNS[kind]));
+export const tagSightingSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("ga4"), id: tagId("ga4"), event: z.null() }),
+  z.strictObject({
+    kind: z.literal("meta"),
+    id: tagId("meta"),
+    event: z.string().regex(new RegExp(TAG_EVENT_PATTERN)).nullable(),
+  }),
+  z.strictObject({
+    kind: z.literal("google_ads"),
+    id: tagId("google_ads"),
+    event: z.null(),
+  }),
+]);
+export const tagSightingReportSchema = z.strictObject({
+  /** False when the conversion left before its window closed, or more was sighted than fits. */
+  complete: z.boolean(),
+  sightings: z.array(tagSightingSchema).max(MAX_TAG_SIGHTINGS),
+});
+export type TagSighting = z.infer<typeof tagSightingSchema>;
+export type TagSightingReport = z.infer<typeof tagSightingReportSchema>;
+
 export type EventId = z.infer<typeof eventIdSchema>;
 export type SessionId = z.infer<typeof sessionIdSchema>;
 export type EventName = z.infer<typeof eventNameSchema>;
