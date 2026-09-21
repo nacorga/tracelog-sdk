@@ -23,7 +23,6 @@ bytes, so no version of one is not also a version of the others.
 ### Added
 
 * **capture-core:** hold a conversion for its tag sighting window ([8f4bd89](https://github.com/nacorga/tracelog-sdk/commit/8f4bd89e6745cb4e170e4efa108fc14815801244))
-* the tag sighting in the page ([07b7e6d](https://github.com/nacorga/tracelog-sdk/commit/07b7e6d9bf58cca7fa775b585ad201c44a675ea0))
 
 ## 1.0.0
 

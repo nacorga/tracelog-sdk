@@ -24,7 +24,6 @@ number between them.
 ### Added
 
 * **event-contract:** define the tag sighting report a conversion carries ([f4addc4](https://github.com/nacorga/tracelog-sdk/commit/f4addc4929cc322650fb68c8dd39ef54ec2fcd53))
-* the tag sighting in the page ([07b7e6d](https://github.com/nacorga/tracelog-sdk/commit/07b7e6d9bf58cca7fa775b585ad201c44a675ea0))
 
 ## 1.0.0
 

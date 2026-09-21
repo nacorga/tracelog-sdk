@@ -24,7 +24,6 @@ edited before release.
 ### Added
 
 * **capture-web:** read the page's tag requests through Resource Timing ([3de9b5c](https://github.com/nacorga/tracelog-sdk/commit/3de9b5ccea21ed82f198b9885c1d6143f7ca71c1))
-* the tag sighting in the page ([07b7e6d](https://github.com/nacorga/tracelog-sdk/commit/07b7e6d9bf58cca7fa775b585ad201c44a675ea0))
 
 ## 1.0.0
 
