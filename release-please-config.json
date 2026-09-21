@@ -5,7 +5,7 @@
   "include-v-in-tag": false,
   "tag-separator": "@",
   "separate-pull-requests": false,
-  "bootstrap-sha": "f1ec5e90f61ec3833ba0fe38a90abe399d7dff6a",
+  "bootstrap-sha": "75aea1cf62864cc0657cf582edc38a7215dc8f69",
   "changelog-sections": [
     { "type": "feat", "section": "Added" },
     { "type": "fix", "section": "Fixed" },
