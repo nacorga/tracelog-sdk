@@ -18,6 +18,13 @@ patch, and neither requires reading your code.
 Entries after 1.0.0 are drafted from the commits that touched this package and
 edited before release.
 
+## [1.1.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@1.0.0...capture-web@1.1.0) (2026-09-21)
+
+
+### Added
+
+* **capture-web:** read the page's tag requests through Resource Timing ([3de9b5c](https://github.com/nacorga/tracelog-sdk/commit/3de9b5ccea21ed82f198b9885c1d6143f7ca71c1))
+
 ## 1.0.0
 
 The first published runtime.
