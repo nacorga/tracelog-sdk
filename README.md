@@ -12,8 +12,8 @@ wire agree on. <https://tracelog.io>
 
 The three publish as **one number**: the bytes `capture-web` ships are the
 other two's bytes, so there is no version of one that is not a version of all
-three. Every integration names a version — there is no `latest` on npm and no
-`v/latest/` on the CDN — and each package's README says how to install it.
+three. Every integration names a version, exactly — each package's README
+installs with `--save-exact`, and there is no `v/latest/` on the CDN.
 
 ## Development
 
