@@ -160,6 +160,18 @@ export const tagSightingReportSchema = z.strictObject({
   /** False when the conversion left before its window closed, or more was sighted than fits. */
   complete: z.boolean(),
   sightings: z.array(tagSightingSchema).max(MAX_TAG_SIGHTINGS),
+  /**
+   * From 1.2.0, in every report whose window the runtime watched whole: each
+   * kind the page requested inside the window whose tag the runtime could
+   * not read, once. A report without it could not tell.
+   */
+  unread: z
+    .array(z.enum(tagSightingKinds))
+    .max(tagSightingKinds.length)
+    .refine((kinds) => new Set(kinds).size === kinds.length, {
+      message: "each kind at most once",
+    })
+    .optional(),
 });
 export type TagSighting = z.infer<typeof tagSightingSchema>;
 export type TagSightingReport = z.infer<typeof tagSightingReportSchema>;
