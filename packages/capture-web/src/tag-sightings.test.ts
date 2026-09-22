@@ -7,8 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createTagSightingPort,
+  matchTagForm,
   matchTagRequest,
   TAG_SIGHTING_MEMORY,
+  type TagForm,
 } from "./tag-sightings.js";
 
 /**
@@ -53,21 +55,42 @@ const adsLabelled: TagSighting = {
 
 describe("the matching table", () => {
   it("matches GA4 on a regional host, with and without a named event, and keeps no event", () => {
-    expect(matchTagRequest(measured.ga4Purchase)).toEqual(ga4);
-    expect(matchTagRequest(measured.ga4Batched)).toEqual(ga4);
+    expect(matchTagRequest(measured.ga4Purchase)).toEqual({ sighting: ga4 });
+    expect(matchTagRequest(measured.ga4Batched)).toEqual({ sighting: ga4 });
   });
 
   it("matches Meta's PageView and Purchase, keeping the event", () => {
-    expect(matchTagRequest(measured.metaPageView)).toEqual(metaPageView);
-    expect(matchTagRequest(measured.metaPurchase)).toEqual(metaPurchase);
+    expect(matchTagRequest(measured.metaPageView)).toEqual({
+      sighting: metaPageView,
+    });
+    expect(matchTagRequest(measured.metaPurchase)).toEqual({
+      sighting: metaPurchase,
+    });
     expect(
       matchTagRequest("https://facebook.com/tr?id=1234567890123456"),
-    ).toEqual({ kind: "meta", id: "1234567890123456", event: null });
+    ).toEqual({
+      sighting: { kind: "meta", id: "1234567890123456", event: null },
+    });
     expect(
       matchTagRequest(
         "https://www.facebook.com/tr/?id=1234567890123456&ev=Add%20To%20Cart",
       ),
-    ).toEqual({ kind: "meta", id: "1234567890123456", event: null });
+    ).toEqual({
+      sighting: { kind: "meta", id: "1234567890123456", event: null },
+    });
+  });
+
+  it("answers a request on Meta's endpoint whose pixel it cannot read as Meta, unread", () => {
+    for (const url of [
+      // the beacon's whole entry (plans/2026-09-21-the-tag-sighting.md
+      // § What was measured, 2026-09-22)
+      "https://www.facebook.com/tr/",
+      "https://www.facebook.com/tr?ev=Purchase",
+      "https://www.facebook.com/tr/?ev=Purchase",
+      "https://www.facebook.com/tr/?id=abc",
+    ]) {
+      expect(matchTagRequest(url), url).toEqual({ unread: "meta" });
+    }
   });
 
   it("matches Google Ads on every host the measurement saw, with its conversion label", () => {
@@ -77,18 +100,22 @@ describe("the matching table", () => {
       measured.adsFirstParty,
       measured.adsFirstPartyEs,
     ]) {
-      expect(matchTagRequest(url)).toEqual(adsLabelled);
+      expect(matchTagRequest(url)).toEqual({ sighting: adsLabelled });
     }
     expect(
       matchTagRequest(
         "https://www.googleadservices.com/pagead/conversion/1234567890/?en=conversion",
       ),
-    ).toEqual({ kind: "google_ads", id: "AW-1234567890", event: null });
+    ).toEqual({
+      sighting: { kind: "google_ads", id: "AW-1234567890", event: null },
+    });
     expect(
       matchTagRequest(
         "https://www.googleadservices.com/pagead/conversion/1234567890/?label=not%20a%20label",
       ),
-    ).toEqual({ kind: "google_ads", id: "AW-1234567890", event: null });
+    ).toEqual({
+      sighting: { kind: "google_ads", id: "AW-1234567890", event: null },
+    });
   });
 
   it("matches nothing else", () => {
@@ -96,7 +123,7 @@ describe("the matching table", () => {
       "https://region1.google-analytics.com/g/collect?v=2&en=purchase",
       "https://region1.google-analytics.com/g/collect?v=2&tid=UA-12345-1",
       "https://www.example.com/tr/?id=1234567890123456&ev=Purchase",
-      "https://www.facebook.com/tr/?ev=Purchase",
+      "https://www.example.com/tr/",
       measured.adsPageView,
       "https://www.googleadservices.com/pagead/conversion/12345/",
       "not a url",
@@ -108,10 +135,83 @@ describe("the matching table", () => {
 
   it("answers only what the contract accepts", () => {
     for (const url of Object.values(measured)) {
-      const sighting = matchTagRequest(url);
-      if (sighting !== null) {
-        expect(tagSightingSchema.safeParse(sighting).success, url).toBe(true);
+      const match = matchTagRequest(url);
+      if (match !== null && "sighting" in match) {
+        expect(tagSightingSchema.safeParse(match.sighting).success, url).toBe(
+          true,
+        );
       }
+    }
+  });
+});
+
+/**
+ * A form as Meta's script adds it in Chrome: its action, and the fields the
+ * reader may ask for. Every other field — the visitor's hashed identifiers —
+ * is there to be left unread, and `asked` records every selector that was.
+ */
+function metaForm(
+  action: string,
+  fields: Readonly<Record<string, string>>,
+): TagForm & { readonly nodeName: "FORM"; readonly asked: string[] } {
+  const asked: string[] = [];
+  return {
+    nodeName: "FORM",
+    action,
+    asked,
+    querySelector(selectors) {
+      asked.push(selectors);
+      const name = /^input\[name="(.+)"\]$/.exec(selectors)?.[1];
+      const value = name === undefined ? undefined : fields[name];
+      return value === undefined ? null : { value };
+    },
+  };
+}
+
+const hashedEmail = "a".repeat(64);
+const bothSelectors = ['input[name="id"]', 'input[name="ev"]'];
+
+describe("the form reader", () => {
+  it("reads the pixel and the event from the two fields that name them, and nothing else", () => {
+    const form = metaForm("https://www.facebook.com/tr/", {
+      id: "1234567890123456",
+      ev: "Purchase",
+      "ud[em]": hashedEmail,
+    });
+    expect(matchTagForm(form)).toEqual({ sighting: metaPurchase });
+    expect(form.asked).toEqual(bothSelectors);
+  });
+
+  it("reads a pixel with no event, or one that does not fit, as a sighting with none", () => {
+    for (const fields of [
+      { id: "1234567890123456" },
+      { id: "1234567890123456", ev: "Add To Cart" },
+    ]) {
+      const form = metaForm("https://www.facebook.com/tr", fields);
+      expect(matchTagForm(form)).toEqual({
+        sighting: { kind: "meta", id: "1234567890123456", event: null },
+      });
+      expect(form.asked).toEqual(bothSelectors);
+    }
+  });
+
+  it("reads a form on Meta's endpoint whose pixel it cannot read as Meta, unread", () => {
+    for (const fields of [{ ev: "Purchase" }, { id: "abc", ev: "Purchase" }]) {
+      const form = metaForm("https://www.facebook.com/tr/", fields);
+      expect(matchTagForm(form)).toEqual({ unread: "meta" });
+      expect(form.asked).toEqual(bothSelectors);
+    }
+  });
+
+  it("reads nothing of a form whose action is elsewhere, or does not parse", () => {
+    for (const action of [
+      "https://www.example.com/tr/",
+      "https://www.facebook.com/login/",
+      "not a url",
+    ]) {
+      const form = metaForm(action, { id: "1234567890123456", ev: "Purchase" });
+      expect(matchTagForm(form), action).toBeNull();
+      expect(form.asked).toEqual([]);
     }
   });
 });
@@ -310,5 +410,251 @@ describe("the port", () => {
     port.start();
     expect(FakeObserver.instances).toHaveLength(2);
     expect(port.around(new Date(at))).toEqual([]);
+  });
+});
+
+interface FakeNode {
+  readonly nodeName: string;
+}
+
+interface FakeRecord {
+  readonly target: FakeNode;
+  readonly addedNodes: readonly FakeNode[];
+}
+
+/**
+ * `MutationObserver`, as far as the port reaches into it — and as the DOM
+ * defines it: one callback, any number of targets, and a `disconnect()` that
+ * ends every one of them.
+ */
+class FakeMutationObserver {
+  static instances: FakeMutationObserver[] = [];
+  static failConstruct = false;
+  readonly targets: { target: FakeNode; options: unknown }[] = [];
+  disconnects = 0;
+
+  constructor(private readonly callback: (records: FakeRecord[]) => void) {
+    if (FakeMutationObserver.failConstruct) throw new TypeError("refused");
+    FakeMutationObserver.instances.push(this);
+  }
+
+  observe(target: FakeNode, options: unknown): void {
+    this.targets.push({ target, options });
+  }
+
+  disconnect(): void {
+    this.disconnects += 1;
+    this.targets.length = 0;
+  }
+
+  /** What the DOM does when `target` gains `nodes`: every observer of it hears. */
+  static append(target: FakeNode, ...nodes: FakeNode[]): void {
+    for (const observer of [...FakeMutationObserver.instances]) {
+      if (observer.targets.some((watched) => watched.target === target)) {
+        observer.callback([{ target, addedNodes: nodes }]);
+      }
+    }
+  }
+}
+
+const bodyNode: FakeNode = { nodeName: "BODY" };
+const rootNode: FakeNode = { nodeName: "HTML" };
+
+function stubPage(body: FakeNode | null): { body: FakeNode | null } {
+  const document = { body, documentElement: rootNode };
+  vi.stubGlobal("window", {
+    PerformanceObserver: FakeObserver,
+    MutationObserver: FakeMutationObserver,
+    document,
+  });
+  return document;
+}
+
+const beaconEntry = "https://www.facebook.com/tr/";
+
+describe("the body observer", () => {
+  beforeEach(() => {
+    FakeObserver.instances = [];
+    FakeObserver.supportedEntryTypes = ["resource"];
+    FakeObserver.failObserve = false;
+    FakeMutationObserver.instances = [];
+    FakeMutationObserver.failConstruct = false;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    vi.stubGlobal("performance", { now: () => PAGE_NOW });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("disconnects every target, as the DOM's does", () => {
+    const observer = new FakeMutationObserver(() => {
+      throw new Error("heard after disconnect");
+    });
+    observer.observe(rootNode, { childList: true });
+    observer.observe(bodyNode, { childList: true });
+    observer.disconnect();
+
+    expect(observer.targets).toEqual([]);
+    expect(() => {
+      FakeMutationObserver.append(rootNode, bodyNode);
+      FakeMutationObserver.append(bodyNode, { nodeName: "FORM" });
+    }).not.toThrow();
+  });
+
+  it("watches the body's own children, and nothing below or beside them", () => {
+    stubPage(bodyNode);
+    const port = createTagSightingPort();
+    port.start();
+
+    expect(FakeMutationObserver.instances).toHaveLength(1);
+    expect(FakeMutationObserver.instances[0]?.targets).toEqual([
+      { target: bodyNode, options: { childList: true } },
+    ]);
+  });
+
+  it("records a Meta form at the system clock, and a beacon's entry as Meta, unread", () => {
+    stubPage(bodyNode);
+    // Forty seconds before the conversions below: every window is watched whole.
+    vi.setSystemTime(NOW - 40_000);
+    const port = createTagSightingPort();
+    port.start();
+    vi.setSystemTime(NOW);
+    FakeObserver.instances[0]?.deliver(entry(beaconEntry, NOW - 5_000));
+    const form = metaForm("https://www.facebook.com/tr/", {
+      id: "1234567890123456",
+      ev: "Purchase",
+      "ud[em]": hashedEmail,
+    });
+    FakeMutationObserver.append(bodyNode, { nodeName: "DIV" }, form);
+
+    // The form's instant is the callback's reading of the system clock: it
+    // sits on the last edge of one window and the first edge of another.
+    expect(port.around(new Date(NOW - TAG_SIGHTING_AFTER_MS))).toEqual([
+      metaPurchase,
+    ]);
+    expect(port.around(new Date(NOW + TAG_SIGHTING_BEFORE_MS))).toEqual([
+      metaPurchase,
+    ]);
+    expect(port.around(new Date(NOW + TAG_SIGHTING_BEFORE_MS + 1))).toEqual([]);
+    expect(form.asked).toEqual(bothSelectors);
+
+    expect(port.around(new Date(NOW))).toEqual([metaPurchase]);
+    expect(port.unreadAround?.(new Date(NOW))).toEqual(["meta"]);
+  });
+
+  it("answers the window's two edges, once per kind, and the memory's null, as around does", () => {
+    stubPage(bodyNode);
+    vi.setSystemTime(NOW - 100_000);
+    const port = createTagSightingPort();
+    port.start();
+    vi.setSystemTime(NOW);
+    const at = NOW - 20_000;
+    const from = at - TAG_SIGHTING_BEFORE_MS;
+    const to = at + TAG_SIGHTING_AFTER_MS;
+    const observer = FakeObserver.instances[0];
+
+    observer?.deliver(entry(beaconEntry, from - 1), entry(beaconEntry, to + 1));
+    expect(port.unreadAround?.(new Date(at))).toEqual([]);
+    observer?.deliver(entry(beaconEntry, from), entry(beaconEntry, to));
+    expect(port.unreadAround?.(new Date(at))).toEqual(["meta"]);
+
+    for (let index = 0; index < TAG_SIGHTING_MEMORY; index += 1) {
+      observer?.deliver(entry(beaconEntry, at - 29_000 + index));
+    }
+    expect(port.around(new Date(at))).toBeNull();
+    expect(port.unreadAround?.(new Date(at))).toBeNull();
+  });
+
+  it("started before the body exists, waits for it, then reads every form and every window whole", () => {
+    const document = stubPage(null);
+    const port = createTagSightingPort();
+    port.start();
+    const observer = FakeMutationObserver.instances[0];
+    expect(observer?.targets).toEqual([
+      { target: rootNode, options: { childList: true } },
+    ]);
+    // Still waiting for the body: nothing it could not read can be ruled out.
+    expect(port.unreadAround?.(new Date(NOW))).toBeNull();
+
+    vi.setSystemTime(NOW + 1_000);
+    document.body = bodyNode;
+    FakeMutationObserver.append(rootNode, { nodeName: "HEAD" }, bodyNode);
+    expect(observer?.disconnects).toBe(1);
+    expect(observer?.targets).toEqual([
+      { target: bodyNode, options: { childList: true } },
+    ]);
+    expect(FakeMutationObserver.instances).toHaveLength(1);
+
+    FakeMutationObserver.append(
+      bodyNode,
+      metaForm("https://www.facebook.com/tr/", {
+        id: "1234567890123456",
+        ev: "Purchase",
+      }),
+    );
+    expect(port.around(new Date(NOW + 1_000))).toEqual([metaPurchase]);
+    // A window reaching back past the start is watched whole: no form can
+    // reach a body before the body exists.
+    expect(port.unreadAround?.(new Date(NOW + 1_000))).toEqual([]);
+  });
+
+  it("started with the body present, rules nothing out over a window that began before it", () => {
+    stubPage(bodyNode);
+    const port = createTagSightingPort();
+    port.start();
+
+    expect(port.unreadAround?.(new Date(NOW + 5_000))).toBeNull();
+    expect(port.unreadAround?.(new Date(NOW + 40_000))).toEqual([]);
+  });
+
+  it("keeps observing the page's requests when the body cannot be observed", () => {
+    stubPage(bodyNode);
+    FakeMutationObserver.failConstruct = true;
+    const port = createTagSightingPort();
+    port.start();
+    FakeObserver.instances[0]?.deliver(
+      entry(measured.metaPurchase, NOW + 40_000),
+    );
+
+    expect(port.observing()).toBe(true);
+    expect(port.around(new Date(NOW + 40_000))).toEqual([metaPurchase]);
+    expect(port.unreadAround?.(new Date(NOW + 40_000))).toBeNull();
+  });
+
+  it("creates no body observer when the page's requests cannot be read", () => {
+    stubPage(bodyNode);
+    FakeObserver.failObserve = true;
+    const port = createTagSightingPort();
+    port.start();
+
+    expect(port.observing()).toBe(false);
+    expect(FakeMutationObserver.instances).toEqual([]);
+    expect(port.unreadAround?.(new Date(NOW + 40_000))).toBeNull();
+  });
+
+  it("disconnects both observers on stop, and creates one of each however often it is started", () => {
+    stubPage(bodyNode);
+    const port = createTagSightingPort();
+    port.start();
+    port.start();
+    expect(FakeObserver.instances).toHaveLength(1);
+    expect(FakeMutationObserver.instances).toHaveLength(1);
+
+    FakeObserver.instances[0]?.deliver(entry(beaconEntry, NOW + 40_000));
+    port.stop();
+    expect(FakeObserver.instances[0]?.disconnected).toBe(true);
+    expect(FakeMutationObserver.instances[0]?.disconnects).toBe(1);
+    expect(FakeMutationObserver.instances[0]?.targets).toEqual([]);
+    expect(port.unreadAround?.(new Date(NOW + 40_000))).toBeNull();
+
+    // A new start watches from its own instant, not from the first one's.
+    vi.setSystemTime(NOW + 20_000);
+    port.start();
+    expect(FakeMutationObserver.instances).toHaveLength(2);
+    expect(port.unreadAround?.(new Date(NOW + 40_000))).toBeNull();
+    expect(port.unreadAround?.(new Date(NOW + 50_000))).toEqual([]);
   });
 });

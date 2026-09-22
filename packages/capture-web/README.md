@@ -91,8 +91,11 @@ inside the conversion path, attached to the step where they happened.
 
 Beside each conversion, which GA4, Meta and Google Ads tags the page requested
 just before and after it — the tag's kind, its id and, for Meta, the event —
-read from the browser's own record of the page's requests. Nothing else of
-those requests is kept. A conversion is held ten seconds so those requests can
+read from the browser's own record of the page's requests and, for the one
+Meta request that record leaves out, from the two fields of the form Meta's
+script adds to the page that name the pixel and the event. Nothing else of
+those requests is kept. A Meta request whose pixel the page does not show is
+reported as Meta, unread. A conversion is held ten seconds so those requests can
 be seen, sent at once when the page is hidden — its report then says whether it
 was cut short — and never held in verification mode. Context keys beginning
 with `__tl.` are TraceLog's and are removed.

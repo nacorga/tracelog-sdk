@@ -80,6 +80,7 @@ const constants = [
   `const TAG_SIGHTINGS_CONTEXT_KEY = ${JSON.stringify(contract.TAG_SIGHTINGS_CONTEXT_KEY)};`,
   `const TAG_ID_PATTERNS = ${JSON.stringify(contract.TAG_ID_PATTERNS)};`,
   `const TAG_EVENT_PATTERN = ${JSON.stringify(contract.TAG_EVENT_PATTERN)};`,
+  `const tagSightingKinds = ${JSON.stringify(contract.tagSightingKinds)};`,
 ].join("\n");
 const runtime = [constants, coreSource, webSource]
   .map((source) =>
