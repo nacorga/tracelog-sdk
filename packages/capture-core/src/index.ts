@@ -10,10 +10,16 @@ import {
   type EventBatch,
   type EventContext,
   type TagSighting,
+  type TagSightingKind,
   type TagSightingReport,
 } from "@tracelog/event-contract";
 
-export type { Event, EventBatch, TagSighting } from "@tracelog/event-contract";
+export type {
+  Event,
+  EventBatch,
+  TagSighting,
+  TagSightingKind,
+} from "@tracelog/event-contract";
 
 /**
  * Time is injected, and this package never reads it: it runs inside sandboxes
@@ -78,6 +84,14 @@ export interface TagSightingPort {
    * to the window's start.
    */
   around(at: Date): TagSighting[] | null;
+  /**
+   * Each kind the page requested from `TAG_SIGHTING_BEFORE_MS` before `at` to
+   * `TAG_SIGHTING_AFTER_MS` after it whose tag the port could not read, once,
+   * in `tagSightingKinds` order; null when `around` is, and when the port did
+   * not watch that whole window. A port without it reports no `unread`, as
+   * 1.1.0 did.
+   */
+  unreadAround?(at: Date): TagSightingKind[] | null;
 }
 
 export type ConsentState = "unknown" | "granted" | "denied";
@@ -527,13 +541,15 @@ export function createCaptureEngine(
           ? null
           : (ports.sightings?.around(new Date(hold.at)) ?? null);
       if (event === undefined || answer === null) continue;
-      const report: TagSightingReport = {
+      const unread = ports.sightings?.unreadAround?.(new Date(hold.at)) ?? null;
+      const report = {
         complete:
           hold.whole &&
           now - hold.at >= TAG_SIGHTING_AFTER_MS &&
           answer.length <= MAX_TAG_SIGHTINGS,
         sightings: answer.slice(0, MAX_TAG_SIGHTINGS),
-      };
+        ...(unread === null ? {} : { unread }),
+      } satisfies TagSightingReport;
       const context = {
         ...event.context,
         [TAG_SIGHTINGS_CONTEXT_KEY]: report,

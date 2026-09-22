@@ -15,6 +15,7 @@ import {
   type CaptureTransport,
   type DropCount,
   type TagSighting,
+  type TagSightingKind,
   type TagSightingPort,
   type TransportResponse,
   type Clock,
@@ -402,6 +403,17 @@ class FakeSightingPort implements TagSightingPort {
   }
 }
 
+/** A port that can also say which kinds it saw requested and could not read. */
+class FakeUnreadPort extends FakeSightingPort {
+  unread: TagSightingKind[] | null = [];
+  readonly askedUnread: Date[] = [];
+
+  unreadAround(at: Date): TagSightingKind[] | null {
+    this.askedUnread.push(at);
+    return this.unread;
+  }
+}
+
 const metaPurchase: TagSighting = {
   kind: "meta",
   id: "123456789012345",
@@ -463,6 +475,76 @@ describe("tag sightings", () => {
       tagSightingReportSchema.safeParse(reportOf(conversion)).success,
     ).toBe(true);
     expect(port.asked).toEqual([at]);
+  });
+
+  it("carries the kinds the port could not read after the sightings, and only when it answers them", async () => {
+    async function reportFrom(port: TagSightingPort, hideAfter?: number) {
+      const { runtime, clock, requests } = setup([], acquisition, port);
+      runtime.engine.consent.grant();
+      runtime.engine.conversion("purchase_completed", {
+        identifier: "order_123",
+      });
+      if (hideAfter === undefined) {
+        await elapse(clock, TAG_SIGHTING_AFTER_MS);
+      } else {
+        clock.advance(hideAfter);
+        await runtime.flush(true);
+      }
+      return { requests };
+    }
+
+    const unread = new FakeUnreadPort();
+    unread.answer = [ga4];
+    unread.unread = ["meta"];
+    const withMeta = await reportFrom(unread);
+    const reported = reportOf(conversionsSent(withMeta.requests)[0]);
+    expect(reported).toEqual({
+      complete: true,
+      sightings: [ga4],
+      unread: ["meta"],
+    });
+    expect(Object.keys(reported as object)).toEqual([
+      "complete",
+      "sightings",
+      "unread",
+    ]);
+    expect(tagSightingReportSchema.safeParse(reported).success).toBe(true);
+    expect(unread.askedUnread).toEqual(unread.asked);
+
+    const none = new FakeUnreadPort();
+    none.answer = [ga4];
+    none.unread = [];
+    expect(
+      reportOf(conversionsSent((await reportFrom(none)).requests)[0]),
+    ).toEqual({ complete: true, sightings: [ga4], unread: [] });
+
+    const unanswered = new FakeUnreadPort();
+    unanswered.answer = [ga4];
+    unanswered.unread = null;
+    const without = new FakeSightingPort();
+    without.answer = [ga4];
+    for (const port of [unanswered, without]) {
+      const report = reportOf(
+        conversionsSent((await reportFrom(port)).requests)[0],
+      );
+      expect(report).toEqual({ complete: true, sightings: [ga4] });
+      expect(Object.keys(report as object)).not.toContain("unread");
+    }
+
+    // `complete` does not read the list: cut short with it and without it.
+    const cutWith = new FakeUnreadPort();
+    cutWith.answer = [ga4];
+    cutWith.unread = ["meta"];
+    const cutWithout = new FakeSightingPort();
+    cutWithout.answer = [ga4];
+    expect(
+      reportOf(conversionsSent((await reportFrom(cutWith, 3_000)).requests)[0]),
+    ).toEqual({ complete: false, sightings: [ga4], unread: ["meta"] });
+    expect(
+      reportOf(
+        conversionsSent((await reportFrom(cutWithout, 3_000)).requests)[0],
+      ),
+    ).toEqual({ complete: false, sightings: [ga4] });
   });
 
   it("releases every held conversion at page hide: cut short before ten seconds, complete after them", async () => {

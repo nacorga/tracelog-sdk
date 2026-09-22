@@ -37,8 +37,9 @@ npm install --save-exact @tracelog/event-contract@1.1.0
   arrived late — or refuses it whole, with one classification the sender can
   read.
 - **The tag sighting** — `tagSightingReportSchema`, the report a conversion's
-  context carries under `TAG_SIGHTINGS_CONTEXT_KEY` — the tags sighted, and
-  whether the report is complete — and the patterns its ids and events are held
+  context carries under `TAG_SIGHTINGS_CONTEXT_KEY` — the tags sighted,
+  whether the report is complete, and from 1.2.0 the kinds it saw requested
+  and could not read — and the patterns its ids and events are held
   to, as strings the runtime inlines. The envelope does not validate it; the
   platform reads it, and a value that fails it is no report.
 

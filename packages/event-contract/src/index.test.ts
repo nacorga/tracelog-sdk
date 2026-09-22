@@ -226,6 +226,46 @@ describe("the tag sighting report", () => {
     }
   });
 
+  it("accepts a report without the kinds it could not read, or with them, each once", () => {
+    for (const unread of [
+      undefined,
+      [],
+      ["meta"],
+      ["ga4", "meta", "google_ads"],
+    ]) {
+      expect(
+        tagSightingReportSchema.safeParse({
+          complete: true,
+          sightings: [ga4],
+          ...(unread === undefined ? {} : { unread }),
+        }).success,
+        JSON.stringify(unread),
+      ).toBe(true);
+    }
+  });
+
+  it("refuses a list of unread kinds that is not one of each at most", () => {
+    for (const unread of [
+      // an unknown kind
+      ["tiktok"],
+      // a kind twice
+      ["meta", "meta"],
+      // four entries
+      ["ga4", "meta", "google_ads", "meta"],
+      // a value that is not an array
+      "meta",
+    ]) {
+      expect(
+        tagSightingReportSchema.safeParse({
+          complete: true,
+          sightings: [meta],
+          unread,
+        }).success,
+        JSON.stringify(unread),
+      ).toBe(false);
+    }
+  });
+
   it("travels inside the free-form context the envelope already accepts", () => {
     const context = {
       [TAG_SIGHTINGS_CONTEXT_KEY]: { complete: true, sightings: [meta, ga4] },

@@ -35,6 +35,13 @@ against the reference integration:
 pnpm --filter @tracelog/reference-nextjs test:e2e
 ```
 
+The live reading loads the vendors' own GA4, Google Ads and Meta scripts from
+their network, with made-up ids, and is run weekly by `vendor-reading.yml`:
+
+```bash
+pnpm --filter @tracelog/reference-nextjs test:live
+```
+
 ```text
 packages/   event-contract · capture-core · capture-web · testkit (fixtures, unpublished)
 examples/   reference-nextjs (the browser floor's page)
