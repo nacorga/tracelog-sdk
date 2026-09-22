@@ -58,6 +58,9 @@ first. Never pick a side silently.
   CI: release-please computes the version and each changelog from them, and
   reads the _path_ a commit touched, never its scope. A `feat` is a minor, a
   `fix` a patch, `!` or `BREAKING CHANGE:` a major.
+- A pull request's title is plain prose, never a conventional commit: it
+  becomes the merge commit's body, and release-please would read it as one
+  more change.
 - Tests live beside the code as `*.test.ts`; the root `vitest.config.ts` runs
   `tools/` at the root and `src/` inside a package. Playwright's specs live in
   `examples/reference-nextjs/e2e/`, and the one suite that reaches a vendor's
