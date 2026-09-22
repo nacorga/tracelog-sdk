@@ -18,6 +18,14 @@ patch, and neither requires reading your code.
 Entries after 1.0.0 are drafted from the commits that touched this package and
 edited before release.
 
+## [1.2.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@1.1.0...capture-web@1.2.0) (2026-09-22)
+
+
+### Added
+
+* **capture-web:** read Meta's form and report its beacon as unread ([bd78f98](https://github.com/nacorga/tracelog-sdk/commit/bd78f98a9c478b863399d9e86090b31a906743c5))
+* Meta's long request ([e8bbba1](https://github.com/nacorga/tracelog-sdk/commit/e8bbba197d571c1537a668c4830bbfe56c8f9d9c))
+
 ## [1.1.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@1.0.0...capture-web@1.1.0) (2026-09-21)
 
 
