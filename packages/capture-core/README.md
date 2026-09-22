@@ -44,7 +44,8 @@ may supply a fifth:
 - **the acquisition context** — referrer, campaign, landing page, device.
 - **tag sightings**, optionally — a `TagSightingPort` that reports which tags
   the page requested around an instant. Without one, conversions are sent
-  unheld and report none.
+  unheld and report none. From 1.2.0 it may also say which kinds it saw
+  requested and could not read.
 
 Consent comes first: before a consent decision the engine creates no
 identifier, no storage and no traffic.
