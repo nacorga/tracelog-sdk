@@ -12,8 +12,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node build.mjs",
     "pretest:e2e": "turbo run build --filter=@tracelog/reference-nextjs",
+    "pretest:live": "turbo run build --filter=@tracelog/reference-nextjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:live": "playwright test --config playwright.live.config.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

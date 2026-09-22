@@ -60,6 +60,8 @@ first. Never pick a side silently.
   `fix` a patch, `!` or `BREAKING CHANGE:` a major.
 - Tests live beside the code as `*.test.ts`; the root `vitest.config.ts` runs
   `tools/` at the root and `src/` inside a package. Playwright's specs live in
-  `examples/reference-nextjs/e2e/`.
+  `examples/reference-nextjs/e2e/`, and the one suite that reaches a vendor's
+  network in `examples/reference-nextjs/e2e-live/`, run weekly by
+  `vendor-reading.yml`.
 - No focused, skipped or stubbed test stands in for a passing one — lint
   refuses `.only`, `.skip` and `.todo`.

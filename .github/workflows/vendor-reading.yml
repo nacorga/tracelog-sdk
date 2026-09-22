@@ -1,0 +1,52 @@
+name: Vendor reading
+
+# The live reading: the vendors' own `gtag.js` and `fbevents.js`, from their
+# own network, on a page carrying the runtime
+# (examples/reference-nextjs/e2e-live/vendor-requests.spec.ts). It reads
+# whether every tag request the page made is in the conversion's report, and
+# whether Meta's script still takes the roads measured past 2,048 characters.
+# The ids are made up — GA4 `G-TL0READING1`, Google Ads `AW-1234567890`, Meta
+# pixel `1234567890123456` — so no account receives anything real. A failure
+# mails the workflow's owner, which is how a vendor moving is noticed. GitHub
+# stops a schedule after sixty days without activity in the repository, so a
+# quiet repository needs this workflow re-enabled by hand. It is the only job
+# that reaches a vendor.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  vendor-reading:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The same image as ci.yml's `sdk-e2e`, and for the same reason: the tag
+    # must match the `@playwright/test` version in
+    # examples/reference-nextjs/package.json exactly, and
+    # `tools/ci-playwright-image.test.ts` compares them.
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Google Chrome is not in the image, and it is the one engine where
+      # Meta's script posts a form rather than sends a beacon.
+      - run: pnpm --filter @tracelog/reference-nextjs exec playwright install chrome
+      - run: pnpm --filter @tracelog/reference-nextjs test:live
+        # Firefox refuses to start as root when $HOME belongs to somebody else;
+        # ci.yml's `sdk-e2e` says why.
+        env:
+          HOME: /root
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: vendor-reading-results
+          path: examples/reference-nextjs/test-results
+          retention-days: 7
