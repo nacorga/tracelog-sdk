@@ -24,7 +24,6 @@ number between them.
 ### Added
 
 * **event-contract:** a report may list the kinds it could not read ([8a1f3b2](https://github.com/nacorga/tracelog-sdk/commit/8a1f3b2b5b17325d4b8dff1f4f3588f164d52251))
-* Meta's long request ([e8bbba1](https://github.com/nacorga/tracelog-sdk/commit/e8bbba197d571c1537a668c4830bbfe56c8f9d9c))
 
 ## [1.1.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@1.0.0...event-contract@1.1.0) (2026-09-21)
 
