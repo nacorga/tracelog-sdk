@@ -1,5 +1,5 @@
 {
-  "packages/event-contract": "1.2.0",
-  "packages/capture-core": "1.2.0",
-  "packages/capture-web": "1.2.0"
+  "packages/event-contract": "1.3.0",
+  "packages/capture-core": "1.3.0",
+  "packages/capture-web": "1.3.0"
 }
