@@ -18,6 +18,13 @@ carry it forward.
 This package, `@tracelog/capture-core` and `@tracelog/capture-web` carry one
 number between them.
 
+## [1.3.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@1.2.0...event-contract@1.3.0) (2026-09-27)
+
+
+### Added
+
+* **event-contract:** a rejection class for an event past the hot window ([e834a02](https://github.com/nacorga/tracelog-sdk/commit/e834a02a6172322497a329d6ab6437049034d8bd))
+
 ## [1.2.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@1.1.0...event-contract@1.2.0) (2026-09-22)
 
 
