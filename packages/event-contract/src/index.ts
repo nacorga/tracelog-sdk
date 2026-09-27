@@ -113,11 +113,19 @@ export const validationClassSchema = z.enum([
   "late",
 ]);
 
+/**
+ * `expired` is ingestion's, never `validateEventBatch`'s: an event whose day
+ * has left the platform's raw hot window is refused alone, the rest of its
+ * batch stored, because its evidence would not outlive the hour
+ * ([spec/data.md] § Validation). The window is the platform's to set, so the
+ * contract names the class and holds no age.
+ */
 export const rejectionClassSchema = z.enum([
   "unknown_version",
   "invalid_schema",
   "too_large",
   "future_time",
+  "expired",
 ]);
 
 /**

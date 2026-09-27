@@ -9,6 +9,7 @@ import {
   eventNameSchema,
   occurredAtSchema,
   MAX_TAG_SIGHTINGS,
+  rejectionClassSchema,
   sessionStartEventSchema,
   TAG_SIGHTINGS_CONTEXT_KEY,
   tagSightingReportSchema,
@@ -135,6 +136,23 @@ describe("event contract schemas", () => {
         clock,
       ),
     ).toEqual({ accepted: false, classification: "future_time" });
+  });
+
+  it("flags an old event late and leaves its expiry to ingestion", () => {
+    const event = {
+      kind: "step" as const,
+      eventId: "018f0e80-7b20-7000-8000-000000000001",
+      sessionId: "018f0e80-7b20-7000-8000-000000000002",
+      name: "checkout_started",
+      occurredAt: "2025-01-08T00:00:00.000Z",
+    };
+
+    expect(validateEventBatch({ v: 1, events: [event] }, clock)).toEqual({
+      accepted: true,
+      batch: { v: 1, events: [event] },
+      flags: [{ classification: "late", eventId: event.eventId }],
+    });
+    expect(rejectionClassSchema.safeParse("expired").success).toBe(true);
   });
 });
 
