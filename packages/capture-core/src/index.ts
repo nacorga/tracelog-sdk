@@ -1,6 +1,5 @@
 import {
   EVENT_ENVELOPE_VERSION,
-  MAX_BATCH_BYTES,
   MAX_BATCH_EVENTS,
   MAX_CONTEXT_BYTES,
   MAX_ERROR_MESSAGE_BYTES,
@@ -50,6 +49,14 @@ const RETRY_BASE_MS = 1000;
 const RETRY_CAP_MS = 60 * 1000;
 const CIRCUIT_FAILURE_THRESHOLD = 5;
 const CIRCUIT_PROBE_MS = 60 * 1000;
+/**
+ * What the browser lets `keepalive` bodies in flight add up to. Every send
+ * uses `keepalive`, so no navigation cancels one, and every send fits what is
+ * left of this beside the sends already in flight ([spec/capture.md]
+ * § Delivery). It is below the contract's `MAX_BATCH_BYTES`, so it is the
+ * batch budget too.
+ */
+const KEEPALIVE_BUDGET_BYTES = 64 * 1024;
 const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 const PUBLIC_KEY_PATTERN = /^tl_pk_[a-z2-7]{26}$/;
 /**
@@ -129,6 +136,7 @@ export interface TransportRequest {
   endpoint: string;
   key: string;
   batch: EventBatch;
+  /** Always true: a send outlives the page that started it. */
   keepalive: boolean;
 }
 
@@ -172,7 +180,8 @@ export type CircuitState = "closed" | "open" | "half_open";
 
 export interface CaptureRuntime {
   engine: CaptureEngine;
-  flush(keepalive?: boolean): Promise<void>;
+  /** `hidden` is a page being hidden: it sends at once, whatever is in flight. */
+  flush(hidden?: boolean): Promise<void>;
   captureError(message: string): void;
   drops(): DropCount[];
   circuitState(): CircuitState;
@@ -341,7 +350,12 @@ interface BatchSelection {
   unsendable: Event[];
 }
 
-function batchFrom(events: Event[]): BatchSelection {
+/**
+ * As many events as fit `room`, oldest first. An event that alone exceeds the
+ * whole keepalive budget can never be sent; one that only exceeds what the
+ * sends in flight leave waits for them.
+ */
+function batchFrom(events: Event[], room: number): BatchSelection {
   const selected: Event[] = [];
   const unsendable: Event[] = [];
   for (const event of events) {
@@ -350,8 +364,9 @@ function batchFrom(events: Event[]): BatchSelection {
       v: EVENT_ENVELOPE_VERSION,
       events: [...selected, event],
     };
-    if (serializedBytes(candidate) > MAX_BATCH_BYTES) {
-      if (selected.length === 0) {
+    const bytes = serializedBytes(candidate);
+    if (bytes > room) {
+      if (selected.length === 0 && bytes > KEEPALIVE_BUDGET_BYTES) {
         unsendable.push(event);
         continue;
       }
@@ -372,11 +387,13 @@ export function createCaptureEngine(
   let pending: PendingEvent[] = [];
   let lastDeclaredName: string | undefined;
   /**
-   * Every send in flight, by count and by the union of their event ids: a
-   * page hide sends alongside one rather than wait for it, so there can be
-   * two, and each must leave the other's events alone.
+   * Every send in flight, by count, by bytes and by the union of their event
+   * ids: a step taken and a page hide send beside one rather than wait for
+   * it, so there can be several, each must leave the others' events alone,
+   * and together they stay within the keepalive budget.
    */
   let sendsInFlight = 0;
+  let bytesInFlight = 0;
   const inFlight = new Set<string>();
   /**
    * The conversions this page emitted and holds for their tag sighting
@@ -514,6 +531,43 @@ export function createCaptureEngine(
       return;
     }
     emit(pendingEvent);
+    sendTaken();
+  }
+
+  /**
+   * A step, and a conversion that is not held, leaves when it is taken: a
+   * click that navigates to another site may fire no hide event at all, and a
+   * send started by the click itself is the one that arrives ([spec/capture.md]
+   * § Delivery). An open circuit keeps it queued for the probe.
+   */
+  function sendTaken(): void {
+    if (circuit !== "closed" || !PUBLIC_KEY_PATTERN.test(config.key)) return;
+    void sendNow();
+  }
+
+  /**
+   * Sends at once what is queued and in no send in flight, beside any send in
+   * flight, within what the keepalive budget has left.
+   */
+  async function sendNow(): Promise<void> {
+    const queue = readQueue(ports.storage);
+    const ready = queue.events.filter(
+      (event) => !held.has(event.eventId) && !inFlight.has(event.eventId),
+    );
+    const { batch, unsendable } = batchFrom(
+      ready,
+      KEEPALIVE_BUDGET_BYTES - bytesInFlight,
+    );
+    dropUnsendable(queue, unsendable);
+    if (batch.events.length > 0) await deliver(batch);
+  }
+
+  function dropUnsendable(queue: StoredQueue, unsendable: Event[]): void {
+    if (unsendable.length === 0) return;
+    const dropped = new Set(unsendable.map((event) => event.eventId));
+    queue.events = queue.events.filter((event) => !dropped.has(event.eventId));
+    addDrop(queue, "invalid_event", unsendable.length);
+    writeQueue(ports.storage, queue);
   }
 
   /**
@@ -572,10 +626,19 @@ export function createCaptureEngine(
     return Math.max(0, earliest - now);
   }
 
-  async function flush(keepalive = false): Promise<void> {
-    release(keepalive);
+  async function flush(hidden = false): Promise<void> {
+    release(hidden);
     if (!initialized || consentState !== "granted") return;
-    if (sendsInFlight > 0 && !keepalive) return;
+    /**
+     * A page being hidden gets no later chance, so it sends what no send in
+     * flight carries at once, whatever the circuit's state, and the answer is
+     * read as any other's.
+     */
+    if (hidden) {
+      if (PUBLIC_KEY_PATTERN.test(config.key)) await sendNow();
+      return;
+    }
+    if (sendsInFlight > 0) return;
 
     const queue = readQueue(ports.storage);
     const ready = queue.events.filter(
@@ -592,17 +655,6 @@ export function createCaptureEngine(
       return;
     }
 
-    /**
-     * A page being hidden gets no later chance, so it sends what no send in
-     * flight carries at once, whatever the circuit's state, and the answer is
-     * read as any other's.
-     */
-    if (sendsInFlight > 0) {
-      const { batch } = batchFrom(ready);
-      if (batch.events.length > 0) await deliver(batch, true);
-      return;
-    }
-
     const now = ports.clock.now().getTime();
     if (circuit === "open") {
       if (now < nextProbeAt) {
@@ -612,21 +664,14 @@ export function createCaptureEngine(
       circuit = "half_open";
     }
 
-    const { batch, unsendable } = batchFrom(ready);
-    if (unsendable.length > 0) {
-      const dropped = new Set(unsendable.map((event) => event.eventId));
-      queue.events = queue.events.filter(
-        (event) => !dropped.has(event.eventId),
-      );
-      addDrop(queue, "invalid_event", unsendable.length);
-      writeQueue(ports.storage, queue);
-    }
+    const { batch, unsendable } = batchFrom(ready, KEEPALIVE_BUDGET_BYTES);
+    dropUnsendable(queue, unsendable);
     if (batch.events.length === 0) {
       scheduleFlush(FLUSH_INTERVAL_MS);
       return;
     }
 
-    await deliver(batch, keepalive);
+    await deliver(batch);
   }
 
   /**
@@ -634,16 +679,18 @@ export function createCaptureEngine(
    * it carried, by its own read, filter and write at the moment it settles,
    * so a send beside it keeps what it delivered.
    */
-  async function deliver(batch: EventBatch, keepalive: boolean): Promise<void> {
+  async function deliver(batch: EventBatch): Promise<void> {
     const carried = new Set(batch.events.map((event) => event.eventId));
+    const bytes = serializedBytes(batch);
     for (const eventId of carried) inFlight.add(eventId);
     sendsInFlight += 1;
+    bytesInFlight += bytes;
     try {
       const response = await ports.transport.send({
         endpoint: config.endpoint,
         key: config.key,
         batch,
-        keepalive,
+        keepalive: true,
       });
 
       if (response.status >= 200 && response.status < 300) {
@@ -707,6 +754,7 @@ export function createCaptureEngine(
     } finally {
       for (const eventId of carried) inFlight.delete(eventId);
       sendsInFlight -= 1;
+      bytesInFlight -= bytes;
     }
   }
 
@@ -736,6 +784,7 @@ export function createCaptureEngine(
         const buffered = pending;
         pending = [];
         for (const pendingEvent of buffered) emit(pendingEvent, true);
+        if (buffered.length > 0) sendTaken();
         scheduleFlush(FLUSH_INTERVAL_MS);
       },
       deny() {
