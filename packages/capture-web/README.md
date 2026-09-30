@@ -105,8 +105,10 @@ An IP address is read once when the event arrives to derive a two-letter country
 code, then discarded.
 
 Events queue locally once consent allows, batch, and deliver with retry, backoff
-and circuit breaking. Delivery failure surfaces as a diagnosable condition,
-never as silent loss.
+and circuit breaking. A step is sent when it is taken, and every send uses
+`keepalive`, so a click that leaves the page — even for another site — does not
+cancel it. Delivery failure surfaces as a diagnosable condition, never as
+silent loss.
 
 ## Where it runs
 

@@ -199,7 +199,7 @@ describe("capture engine", () => {
     expect(stored.drops).toEqual({ queue_overflow: 2 });
   });
 
-  it("limits batches by event count and the contract byte budget", async () => {
+  it("keeps the bodies in flight within the keepalive budget together", async () => {
     const { runtime, requests } = setup();
     runtime.engine.consent.grant();
     for (let index = 0; index < 80; index += 1) {
@@ -209,14 +209,26 @@ describe("capture engine", () => {
       });
     }
 
+    // Nothing has settled yet, so every send so far is in flight at once.
+    const bytes = requests.map(
+      (request) =>
+        new TextEncoder().encode(JSON.stringify(request.batch)).byteLength,
+    );
+    expect(requests.length).toBeGreaterThan(1);
+    expect(bytes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(
+      64 * 1024,
+    );
+    expect(requests.every((request) => request.keepalive)).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(0);
     await runtime.flush();
-    const batch = requests[0]?.batch;
+    const batch = requests[requests.length - 1]?.batch;
     expect(batch).toBeDefined();
     expect(eventBatchSchema.safeParse(batch).success).toBe(true);
     expect(batch!.events.length).toBeLessThanOrEqual(50);
     expect(
       new TextEncoder().encode(JSON.stringify(batch)).byteLength,
-    ).toBeLessThanOrEqual(MAX_BATCH_BYTES);
+    ).toBeLessThanOrEqual(64 * 1024);
   });
 
   /**
@@ -231,12 +243,7 @@ describe("capture engine", () => {
     });
     runtime.engine.consent.grant();
     runtime.engine.step("checkout_started");
-    expect(queue(storage).events.map((event) => event.kind)).toEqual([
-      "session_start",
-      "step",
-    ]);
-
-    await runtime.flush();
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.batch.events.map((event) => event.kind)).toEqual([
@@ -314,6 +321,73 @@ describe("capture engine", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(requests).toHaveLength(6);
     expect(runtime.circuitState()).toBe("closed");
+  });
+
+  /**
+   * A click that navigates to another site may fire no hide event at all, and
+   * a send started by the click itself is the one that arrives, so a step
+   * leaves when it is taken — beside a send still in flight, with keepalive
+   * ([spec/capture.md] § Delivery).
+   */
+  it("sends a step when it is taken, beside a send still in flight", () => {
+    const storage = new MemoryStorage();
+    const requests: Parameters<CaptureTransport["send"]>[0][] = [];
+    const runtime = createCaptureEngine(
+      {
+        transport: {
+          send(request) {
+            requests.push(request);
+            return new Promise<TransportResponse>(() => undefined);
+          },
+        },
+        storage,
+        clock: new MutableClock(),
+      },
+      acquisition,
+    );
+    runtime.engine.init({ key: validKey });
+    runtime.engine.consent.grant();
+
+    runtime.engine.step("pricing_viewed");
+    runtime.engine.step("signup_started");
+
+    expect(
+      requests.map((request) =>
+        request.batch.events.map((event) => event.name),
+      ),
+    ).toEqual([["session_started", "pricing_viewed"], ["signup_started"]]);
+    expect(requests.every((request) => request.keepalive)).toBe(true);
+  });
+
+  it("sends at page hide while the circuit is open, and not when a step is taken", async () => {
+    const { runtime, requests, clock } = setup([
+      new Error("offline"),
+      new Error("offline"),
+      new Error("offline"),
+      new Error("offline"),
+      new Error("offline"),
+    ]);
+    runtime.engine.consent.grant();
+    runtime.engine.step("pricing_viewed");
+    await vi.advanceTimersByTimeAsync(0);
+    for (const delay of [1_000, 2_000, 4_000, 8_000]) {
+      clock.advance(delay);
+      await vi.advanceTimersByTimeAsync(delay);
+    }
+    expect(runtime.circuitState()).toBe("open");
+    expect(requests).toHaveLength(5);
+
+    runtime.engine.step("signup_started");
+    expect(requests).toHaveLength(5);
+
+    await runtime.flush(true);
+    expect(requests).toHaveLength(6);
+    expect(requests[5]?.keepalive).toBe(true);
+    expect(requests[5]?.batch.events.map((event) => event.name)).toEqual([
+      "session_started",
+      "pricing_viewed",
+      "signup_started",
+    ]);
   });
 
   it("does not retry 4xx batches and counts every rejected event", async () => {
@@ -666,6 +740,7 @@ describe("tag sightings", () => {
     runtime.engine.conversion("purchase_completed", {
       identifier: "order_123",
     });
+    const sentBeforeDeny = requests.length;
     runtime.engine.consent.deny();
 
     expect(port.stopped).toBe(1);
@@ -675,7 +750,8 @@ describe("tag sightings", () => {
     runtime.engine.consent.grant();
     await runtime.flush(true);
     expect(port.asked).toEqual([]);
-    expect(requests).toEqual([]);
+    expect(requests).toHaveLength(sentBeforeDeny);
+    expect(conversionsSent(requests)).toEqual([]);
   });
 
   it("removes a customer's __tl. keys from a step's and a conversion's context, and keeps the rest", () => {
@@ -733,7 +809,7 @@ describe("tag sightings", () => {
 
   it("sends a conversion an earlier page left in the queue as it is", async () => {
     const earlier = new MemoryStorage();
-    const left = setup([], acquisition, undefined, earlier);
+    const left = setup([new Error("offline")], acquisition, undefined, earlier);
     left.runtime.engine.consent.grant();
     left.runtime.engine.conversion("purchase_completed", {
       identifier: "order_122",
@@ -742,7 +818,8 @@ describe("tag sightings", () => {
     const queued = queue(earlier).events.find(
       (event) => event.kind === "conversion",
     );
-    // The earlier page is gone, and its timers with it.
+    // Its send failed; the earlier page is gone, and its timers with it.
+    await vi.advanceTimersByTimeAsync(0);
     vi.clearAllTimers();
 
     const port = new FakeSightingPort();

@@ -160,7 +160,11 @@ for (const format of ["esm", "iife"] as const) {
       // `TAG_SIGHTING_AFTER_MS` — before it is sent ([spec/capture.md] § Tag
       // sightings).
       await page.clock.fastForward(10_000);
-      await expect.poll(() => batches.length).toBe(1);
+      // The step leaves when it is taken, the held conversion after its window
+      // ([spec/capture.md] § Delivery).
+      await expect
+        .poll(() => batches.flatMap((batch) => batch.events).length)
+        .toBe(3);
 
       const events = batches.flatMap((batch) => batch.events);
       expect(events.map((event) => event.kind)).toEqual([

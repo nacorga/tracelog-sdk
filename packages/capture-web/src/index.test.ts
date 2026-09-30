@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import TraceLog from "./index.js";
 
 interface Recorded {
-  readonly requests: { url: string; body: unknown }[];
+  readonly requests: { url: string; body: unknown; keepalive: boolean }[];
   hidden(): Promise<void>;
 }
 
@@ -12,7 +12,7 @@ function browser(): Recorded {
   const listeners = new Map<string, (event: unknown) => void>();
   const documentListeners = new Map<string, (event: unknown) => void>();
   const storage = new Map<string, string>();
-  const requests: { url: string; body: unknown }[] = [];
+  const requests: { url: string; body: unknown; keepalive: boolean }[] = [];
   const value = {
     location: { href: "https://shop.example/checkout" },
     opener: null,
@@ -30,8 +30,12 @@ function browser(): Recorded {
     },
     addEventListener: (name: string, handler: (event: unknown) => void) =>
       listeners.set(name, handler),
-    async fetch(url: string, options: { body: string }) {
-      requests.push({ url, body: JSON.parse(options.body) as unknown });
+    async fetch(url: string, options: { body: string; keepalive: boolean }) {
+      requests.push({
+        url,
+        body: JSON.parse(options.body) as unknown,
+        keepalive: options.keepalive,
+      });
       return {
         status: 202,
         json: async () => ({ accepted: 1, rejected: [] }),
@@ -81,6 +85,10 @@ describe("capture-web public API", () => {
       events: { kind: string; mode?: string; identifier?: string }[];
     };
     expect(recorded.requests[0]?.url).toBe("https://api.tracelog.io/v1/events");
+    // Every send outlives the page that started it ([spec/capture.md] § Delivery).
+    expect(recorded.requests.map((request) => request.keepalive)).toEqual([
+      true,
+    ]);
     expect(batch.events.map((event) => event.mode)).toEqual([
       "verification",
       "verification",
