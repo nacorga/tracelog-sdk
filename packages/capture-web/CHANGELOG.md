@@ -18,6 +18,13 @@ patch, and neither requires reading your code.
 Entries after 1.0.0 are drafted from the commits that touched this package and
 edited before release.
 
+## [1.3.1](https://github.com/nacorga/tracelog-sdk/compare/capture-web@1.3.0...capture-web@1.3.1) (2026-09-30)
+
+
+### Fixed
+
+* **capture-core:** a send outlives the page that started it ([86faf5f](https://github.com/nacorga/tracelog-sdk/commit/86faf5f479a76d69f6413f9db82daae1482492df))
+
 ## [1.3.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@1.2.0...capture-web@1.3.0) (2026-09-27)
 
 
