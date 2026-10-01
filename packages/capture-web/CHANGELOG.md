@@ -18,6 +18,23 @@ patch, and neither requires reading your code.
 Entries after 1.0.0 are drafted from the commits that touched this package and
 edited before release.
 
+## [2.0.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@1.3.1...capture-web@2.0.0) (2026-10-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **capture-core:** call TraceLog.consent.grant() on every load while the visitor's consent stands, not only when they accept.
+
+### Added
+
+* **capture-web:** calls before init are held ([b8d4fe5](https://github.com/nacorga/tracelog-sdk/commit/b8d4fe5e4bb104c2343aeceeb1b17f70d8cc697a))
+
+
+### Fixed
+
+* **capture-core:** a grant is not remembered across loads ([75d4cac](https://github.com/nacorga/tracelog-sdk/commit/75d4cac28055007553e36b97d4eef0dbabf27103))
+* **capture-web:** the verification mark follows its tab ([9653074](https://github.com/nacorga/tracelog-sdk/commit/9653074fb57ef5523a43a7fa6bc681f8b8a8814f))
+
 ## [1.3.1](https://github.com/nacorga/tracelog-sdk/compare/capture-web@1.3.0...capture-web@1.3.1) (2026-09-30)
 
 
