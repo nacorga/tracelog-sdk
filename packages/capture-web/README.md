@@ -42,7 +42,7 @@ the floor before a release.
 Before consent is granted the runtime creates no identifiers, writes no storage,
 and sends no network traffic — none, not a reduced set. Consent is a state
 machine you drive; until it reaches `granted`, capture is inert. Denying keeps it
-inert without breaking the page.
+inert without breaking the page, and is remembered; a grant is not.
 
 ```js
 import TraceLog from "@tracelog/capture-web";
@@ -52,9 +52,15 @@ TraceLog.init({
   endpoint: "https://api.tracelog.io/v1/events",
 });
 
-// Only once your consent surface says yes:
+// When your consent surface says yes, and on every later load while
+// that consent stands:
 TraceLog.consent.grant();
 ```
+
+A grant lasts the page it was given on. Your consent surface keeps the
+visitor's answer and its expiry, so call `grant()` on each load where that
+answer is still yes; a grant that outlived it would capture a visitor whose
+consent has lapsed.
 
 A site that never calls `consent.grant()` captures nothing and costs its
 visitors nothing.

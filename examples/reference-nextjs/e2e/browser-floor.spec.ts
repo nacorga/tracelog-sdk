@@ -195,9 +195,10 @@ for (const format of ["esm", "iife"] as const) {
         currency: validEventBatchFixtures.conversion.events[0].currency,
         context: validEventBatchFixtures.conversion.events[0].context,
       });
+      // A grant is not remembered ([spec/capture.md] § Consent first).
       expect(
         await page.evaluate(() => Object.keys(localStorage).sort()),
-      ).toEqual(["__tl.a", "__tl.c", "__tl.q", "__tl.s"]);
+      ).toEqual(["__tl.a", "__tl.q", "__tl.s"]);
     });
   });
 }

@@ -155,6 +155,51 @@ describe("capture engine", () => {
     expect([...storage.values.entries()]).toEqual([["__tl.c", "denied"]]);
   });
 
+  /**
+   * A grant lasts the page it was given on: the integrator grants on every load
+   * while consent stands, so a grant never outlives the banner that gave it
+   * ([spec/capture.md] § Consent first).
+   */
+  it("does not remember a grant, and deletes one an earlier runtime stored", async () => {
+    const { runtime, storage } = setup();
+    runtime.engine.consent.grant();
+    expect(storage.values.has("__tl.c")).toBe(false);
+
+    const legacy = new MemoryStorage();
+    legacy.setItem("__tl.c", "granted");
+    const next = setup([], acquisition, undefined, legacy);
+    next.runtime.engine.step("checkout_started");
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(next.runtime.engine.consent.state()).toBe("unknown");
+    expect([...legacy.values.keys()]).toEqual([]);
+    expect(next.requests).toEqual([]);
+  });
+
+  it("keeps this page's grant through a second init", () => {
+    const { runtime, storage } = setup();
+    runtime.engine.consent.grant();
+    runtime.engine.init({ key: validKey });
+
+    expect(runtime.engine.consent.state()).toBe("granted");
+    runtime.engine.step("checkout_started");
+    expect(queue(storage).events.map((event) => event.kind)).toEqual([
+      "session_start",
+      "step",
+    ]);
+  });
+
+  it("deletes a remembered denial when the visitor grants", () => {
+    const refused = new MemoryStorage();
+    refused.setItem("__tl.c", "denied");
+    const { runtime } = setup([], acquisition, undefined, refused);
+    expect(runtime.engine.consent.state()).toBe("denied");
+
+    runtime.engine.consent.grant();
+    expect(refused.values.has("__tl.c")).toBe(false);
+    expect(runtime.engine.consent.state()).toBe("granted");
+  });
+
   it("rotates a UUIDv7 session at 30 minutes and emits session_start first", () => {
     const { runtime, storage, clock } = setup();
     runtime.engine.consent.grant();
@@ -824,14 +869,19 @@ describe("tag sightings", () => {
 
     const port = new FakeSightingPort();
     port.answer = [metaPurchase];
-    const { clock, requests } = setup([], acquisition, port, earlier);
+    const { runtime, clock, requests } = setup([], acquisition, port, earlier);
+    await elapse(clock, 5_000);
+    // Nothing leaves until this page's own grant: a grant is not remembered.
+    expect(requests).toEqual([]);
+
+    runtime.engine.consent.grant();
     await elapse(clock, 5_000);
 
     expect(conversionsSent(requests)).toEqual([queued]);
     expect(port.asked).toEqual([]);
   });
 
-  it("starts the port on a grant and on a remembered grant, and never before", () => {
+  it("starts the port on a grant, and never before it or on a stored one", () => {
     const port = new FakeSightingPort();
     const { runtime } = setup([], acquisition, port);
     runtime.engine.conversion("purchase_completed", {
@@ -845,7 +895,7 @@ describe("tag sightings", () => {
     remembered.setItem("__tl.c", "granted");
     const rememberedPort = new FakeSightingPort();
     setup([], acquisition, rememberedPort, remembered);
-    expect(rememberedPort.started).toBe(1);
+    expect(rememberedPort.started).toBe(0);
 
     const refused = new MemoryStorage();
     refused.setItem("__tl.c", "denied");
