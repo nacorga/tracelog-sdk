@@ -80,7 +80,10 @@ That is all of it, and it is what the major version protects.
 
 `init` also accepts `mode: "verification"`, which a distributed platform artifact
 declares for its platform's own test order. A site's own snippet never sets it —
-the runtime derives verification mode from the window that opened the page.
+the runtime derives verification mode from the window that opened the page, and
+once consent is granted there the tab keeps it (`sessionStorage`, `__tl.v`) for
+the site's next pages and the return from a payment taken elsewhere, to the same
+origin. A denial forgets it.
 
 Call `init` once per page load. The runtime is built on the first call and
 kept; a later call re-reads the key and the endpoint and rebuilds nothing else,

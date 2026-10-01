@@ -245,4 +245,6 @@ test("verification handshake reports only diagnostic state", async ({
   expect(JSON.stringify(diagnostic)).not.toContain("identifier");
   expect(batches).toEqual([]);
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
+  // The tab keeps the mark from the grant, never before it.
+  expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual([]);
 });
