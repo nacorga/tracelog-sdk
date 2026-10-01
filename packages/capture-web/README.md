@@ -87,7 +87,10 @@ origin. A denial forgets it.
 
 Call `init` once per page load. The runtime is built on the first call and
 kept; a later call re-reads the key and the endpoint and rebuilds nothing else,
-so a mode or an acquisition the first call decided stands for the page.
+so a mode or an acquisition the first call decided stands for the page. A
+call made before it — a grant, a step, a conversion — is held, up to 100, and
+made once it has run. The runtime can hold only what reaches it: a page that
+imports it lazily holds what it calls before the import resolves.
 
 The application generates the exact calls your declared plan needs, so you never
 type a name TraceLog already knows.

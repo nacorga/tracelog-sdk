@@ -1,5 +1,6 @@
 import {
   createCaptureEngine,
+  PRE_CONSENT_CAP,
   type AcquisitionContext,
   type CaptureEngine,
   type CaptureRuntime,
@@ -52,6 +53,19 @@ let engine: CaptureEngine | undefined;
 let verification: VerificationMode | undefined;
 let configValid = false;
 let listenersInstalled = false;
+/**
+ * Calls made before `init`, made in order once it has run, up to the same 100
+ * the engine holds before consent; past that they are dropped
+ * ([spec/capture.md] § Consent first).
+ */
+let early: (() => void)[] = [];
+
+/** True when there is no engine yet, and the call was held, or dropped. */
+function heldForInit(call: () => void): boolean {
+  if (engine !== undefined) return false;
+  if (early.length < PRE_CONSENT_CAP) early.push(call);
+  return true;
+}
 
 function browserStorage(): CaptureStorage {
   try {
@@ -254,6 +268,9 @@ function init(options: WebInitOptions): void {
     ...(options.endpoint === undefined ? {} : { endpoint }),
   });
   installListeners();
+  const held = early;
+  early = [];
+  for (const call of held) call();
   reportDiagnostic();
 }
 
@@ -261,11 +278,13 @@ const TraceLog = {
   init,
   consent: {
     grant(): void {
+      if (heldForInit(() => TraceLog.consent.grant())) return;
       engine?.consent.grant();
       if (engine?.consent.state() === "granted") keepVerification(true);
       reportDiagnostic();
     },
     deny(): void {
+      if (heldForInit(() => TraceLog.consent.deny())) return;
       engine?.consent.deny();
       keepVerification(false);
       reportDiagnostic();
@@ -275,10 +294,12 @@ const TraceLog = {
     },
   },
   step(name: string, context?: object): void {
+    if (heldForInit(() => TraceLog.step(name, context))) return;
     engine?.step(name, context);
     reportDiagnostic();
   },
   conversion(name: string, options: ConversionOptions): void {
+    if (heldForInit(() => TraceLog.conversion(name, options))) return;
     engine?.conversion(name, options);
     reportDiagnostic();
   },

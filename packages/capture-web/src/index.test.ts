@@ -215,3 +215,39 @@ describe("capture-web verification mode", () => {
     );
   });
 });
+
+/**
+ * A call made before `init` — a child component's effect, which React runs
+ * before its parent's — is made once `init` has run, in order, up to 100.
+ */
+describe("capture-web calls before init", () => {
+  it("makes them after init, in the order they were made", async () => {
+    const { TraceLog: runtime, recorded } = await load({});
+    runtime.step("checkout_started");
+    runtime.consent.grant();
+    runtime.conversion("purchase", { identifier: "wc-1042" });
+    expect(runtime.consent.state()).toBe("unknown");
+
+    runtime.init({ key, endpoint });
+    await recorded.hidden();
+
+    expect(runtime.consent.state()).toBe("granted");
+    const events = recorded.requests.flatMap(
+      (request) => (request.body as { events: { kind: string }[] }).events,
+    );
+    expect(events.map((event) => event.kind)).toEqual([
+      "session_start",
+      "step",
+      "conversion",
+    ]);
+  });
+
+  it("drops the hundred and first", async () => {
+    const { TraceLog: runtime } = await load({});
+    for (let index = 0; index < 100; index += 1) runtime.step("cart_viewed");
+    runtime.consent.grant();
+
+    runtime.init({ key, endpoint });
+    expect(runtime.consent.state()).toBe("unknown");
+  });
+});
