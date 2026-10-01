@@ -42,7 +42,7 @@ the floor before a release.
 Before consent is granted the runtime creates no identifiers, writes no storage,
 and sends no network traffic — none, not a reduced set. Consent is a state
 machine you drive; until it reaches `granted`, capture is inert. Denying keeps it
-inert without breaking the page.
+inert without breaking the page, and is remembered; a grant is not.
 
 ```js
 import TraceLog from "@tracelog/capture-web";
@@ -52,9 +52,15 @@ TraceLog.init({
   endpoint: "https://api.tracelog.io/v1/events",
 });
 
-// Only once your consent surface says yes:
+// When your consent surface says yes, and on every later load while
+// that consent stands:
 TraceLog.consent.grant();
 ```
+
+A grant lasts the page it was given on. Your consent surface keeps the
+visitor's answer and its expiry, so call `grant()` on each load where that
+answer is still yes; a grant that outlived it would capture a visitor whose
+consent has lapsed.
 
 A site that never calls `consent.grant()` captures nothing and costs its
 visitors nothing.
@@ -74,11 +80,17 @@ That is all of it, and it is what the major version protects.
 
 `init` also accepts `mode: "verification"`, which a distributed platform artifact
 declares for its platform's own test order. A site's own snippet never sets it —
-the runtime derives verification mode from the window that opened the page.
+the runtime derives verification mode from the window that opened the page, and
+once consent is granted there the tab keeps it (`sessionStorage`, `__tl.v`) for
+the site's next pages and the return from a payment taken elsewhere, to the same
+origin. A denial forgets it.
 
 Call `init` once per page load. The runtime is built on the first call and
 kept; a later call re-reads the key and the endpoint and rebuilds nothing else,
-so a mode or an acquisition the first call decided stands for the page.
+so a mode or an acquisition the first call decided stands for the page. A
+call made before it — a grant, a step, a conversion — is held, up to 100, and
+made once it has run. The runtime can hold only what reaches it: a page that
+imports it lazily holds what it calls before the import resolves.
 
 The application generates the exact calls your declared plan needs, so you never
 type a name TraceLog already knows.

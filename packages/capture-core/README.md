@@ -48,7 +48,8 @@ may supply a fifth:
   requested and could not read.
 
 Consent comes first: before a consent decision the engine creates no
-identifier, no storage and no traffic.
+identifier, no storage and no traffic. A denial is remembered; a grant is not,
+so the host grants on every load while consent stands.
 
 ## The wire format
 

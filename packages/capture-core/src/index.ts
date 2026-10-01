@@ -765,21 +765,22 @@ export function createCaptureEngine(
         endpoint: options.endpoint ?? "/v1/events",
       };
       initialized = true;
+      /**
+       * Only a denial is remembered; a grant is the integrator's on every load
+       * while consent stands, so it never outlives the banner that gave it
+       * ([spec/capture.md] § Consent first). A grant an earlier runtime
+       * stored is deleted. A second init keeps the decision this page made.
+       */
+      if (consentState !== "unknown") return;
       const storedConsent = safeGet(ports.storage, CONSENT_KEY);
-      consentState =
-        storedConsent === "granted" || storedConsent === "denied"
-          ? storedConsent
-          : "unknown";
-      if (consentState === "granted") {
-        ports.sightings?.start();
-        scheduleFlush(FLUSH_INTERVAL_MS);
-      }
+      if (storedConsent === "denied") consentState = "denied";
+      else if (storedConsent !== null) safeRemove(ports.storage, CONSENT_KEY);
     },
     consent: {
       grant() {
         if (!initialized) return;
         consentState = "granted";
-        safeSet(ports.storage, CONSENT_KEY, "granted");
+        safeRemove(ports.storage, CONSENT_KEY);
         ports.sightings?.start();
         const buffered = pending;
         pending = [];

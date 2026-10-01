@@ -195,9 +195,10 @@ for (const format of ["esm", "iife"] as const) {
         currency: validEventBatchFixtures.conversion.events[0].currency,
         context: validEventBatchFixtures.conversion.events[0].context,
       });
+      // A grant is not remembered ([spec/capture.md] § Consent first).
       expect(
         await page.evaluate(() => Object.keys(localStorage).sort()),
-      ).toEqual(["__tl.a", "__tl.c", "__tl.q", "__tl.s"]);
+      ).toEqual(["__tl.a", "__tl.q", "__tl.s"]);
     });
   });
 }
@@ -244,4 +245,6 @@ test("verification handshake reports only diagnostic state", async ({
   expect(JSON.stringify(diagnostic)).not.toContain("identifier");
   expect(batches).toEqual([]);
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
+  // The tab keeps the mark from the grant, never before it.
+  expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual([]);
 });

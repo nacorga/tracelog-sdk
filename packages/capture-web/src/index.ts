@@ -1,5 +1,6 @@
 import {
   createCaptureEngine,
+  PRE_CONSENT_CAP,
   type AcquisitionContext,
   type CaptureEngine,
   type CaptureRuntime,
@@ -12,10 +13,13 @@ import { systemClock } from "./clock.js";
 import { createTagSightingPort } from "./tag-sightings.js";
 
 const WEB_PUBLIC_KEY_PATTERN = /^tl_pk_[a-z2-7]{26}$/;
+/** The tab's verification nonce, in `sessionStorage`, written at the grant. */
+const VERIFICATION_KEY = "__tl.v";
 
 interface VerificationMode {
   nonce: string;
-  opener: Window;
+  /** Gone once the tab has been to a page that severed it. */
+  opener: Window | null;
 }
 
 class MemoryStorage implements CaptureStorage {
@@ -49,6 +53,19 @@ let engine: CaptureEngine | undefined;
 let verification: VerificationMode | undefined;
 let configValid = false;
 let listenersInstalled = false;
+/**
+ * Calls made before `init`, made in order once it has run, up to the same 100
+ * the engine holds before consent; past that they are dropped
+ * ([spec/capture.md] § Consent first).
+ */
+let early: (() => void)[] = [];
+
+/** True when there is no engine yet, and the call was held, or dropped. */
+function heldForInit(call: () => void): boolean {
+  if (engine !== undefined) return false;
+  if (early.length < PRE_CONSENT_CAP) early.push(call);
+  return true;
+}
 
 function browserStorage(): CaptureStorage {
   try {
@@ -58,11 +75,37 @@ function browserStorage(): CaptureStorage {
   }
 }
 
+/**
+ * A page opened from a verification session carries the marker and has an
+ * opener. Once consent is granted there, the tab keeps the nonce, so the mark
+ * follows it to the site's next pages and back from a payment taken
+ * elsewhere, to the same origin ([spec/capture.md] § Verification mode).
+ */
 function verificationMode(): VerificationMode | undefined {
   const nonce = new URL(window.location.href).searchParams.get("__tl_verify");
-  return nonce !== null && nonce.length > 0 && window.opener !== null
-    ? { nonce, opener: window.opener }
-    : undefined;
+  if (nonce !== null && nonce.length > 0 && window.opener !== null) {
+    return { nonce, opener: window.opener };
+  }
+  let kept: string | null = null;
+  try {
+    kept = window.sessionStorage.getItem(VERIFICATION_KEY);
+  } catch {
+    // An unreadable tab storage keeps no mark.
+  }
+  return kept === null || kept.length === 0
+    ? undefined
+    : { nonce: kept, opener: window.opener };
+}
+
+function keepVerification(keep: boolean): void {
+  try {
+    if (!keep) window.sessionStorage.removeItem(VERIFICATION_KEY);
+    else if (verification !== undefined) {
+      window.sessionStorage.setItem(VERIFICATION_KEY, verification.nonce);
+    }
+  } catch {
+    // A tab that cannot keep it marks this page only.
+  }
 }
 
 function landingPage(): string {
@@ -120,7 +163,7 @@ function isEndpointValid(endpoint: string): boolean {
 }
 
 function reportDiagnostic(): void {
-  if (verification === undefined) return;
+  if (verification === undefined || verification.opener === null) return;
   verification.opener.postMessage(
     {
       type: "tracelog:diag",
@@ -225,6 +268,9 @@ function init(options: WebInitOptions): void {
     ...(options.endpoint === undefined ? {} : { endpoint }),
   });
   installListeners();
+  const held = early;
+  early = [];
+  for (const call of held) call();
   reportDiagnostic();
 }
 
@@ -232,11 +278,15 @@ const TraceLog = {
   init,
   consent: {
     grant(): void {
+      if (heldForInit(() => TraceLog.consent.grant())) return;
       engine?.consent.grant();
+      if (engine?.consent.state() === "granted") keepVerification(true);
       reportDiagnostic();
     },
     deny(): void {
+      if (heldForInit(() => TraceLog.consent.deny())) return;
       engine?.consent.deny();
+      keepVerification(false);
       reportDiagnostic();
     },
     state() {
@@ -244,10 +294,12 @@ const TraceLog = {
     },
   },
   step(name: string, context?: object): void {
+    if (heldForInit(() => TraceLog.step(name, context))) return;
     engine?.step(name, context);
     reportDiagnostic();
   },
   conversion(name: string, options: ConversionOptions): void {
+    if (heldForInit(() => TraceLog.conversion(name, options))) return;
     engine?.conversion(name, options);
     reportDiagnostic();
   },
