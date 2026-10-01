@@ -17,6 +17,17 @@ This package, `@tracelog/capture-web` and `@tracelog/event-contract` carry one
 number between them: the browser runtime's published bytes are this engine's
 bytes, so no version of one is not also a version of the others.
 
+## [2.0.0](https://github.com/nacorga/tracelog-sdk/compare/capture-core@1.3.1...capture-core@2.0.0) (2026-10-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **capture-core:** call TraceLog.consent.grant() on every load while the visitor's consent stands, not only when they accept.
+
+### Fixed
+
+* **capture-core:** a grant is not remembered across loads ([75d4cac](https://github.com/nacorga/tracelog-sdk/commit/75d4cac28055007553e36b97d4eef0dbabf27103))
+
 ## [1.3.1](https://github.com/nacorga/tracelog-sdk/compare/capture-core@1.3.0...capture-core@1.3.1) (2026-09-30)
 
 
