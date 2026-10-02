@@ -19,7 +19,7 @@ schemas rather than a copy of them. Sites installing TraceLog do not need it:
 <!-- x-release-please-start-version -->
 
 ```bash
-npm install --save-exact @tracelog/event-contract@2.0.0
+npm install --save-exact @tracelog/event-contract@2.0.1
 ```
 
 <!-- x-release-please-end -->

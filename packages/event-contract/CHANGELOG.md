@@ -18,6 +18,13 @@ carry it forward.
 This package, `@tracelog/capture-core` and `@tracelog/capture-web` carry one
 number between them.
 
+## [2.0.1](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.0.0...event-contract@2.0.1) (2026-10-02)
+
+
+### Fixed
+
+* a bundle that imports only the contract's limits carries no zod ([518d50e](https://github.com/nacorga/tracelog-sdk/commit/518d50ef2e1dcae1b6c8bd9e871503f3d45f5bf9))
+
 ## [2.0.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@1.3.1...event-contract@2.0.0) (2026-10-01)
 
 
