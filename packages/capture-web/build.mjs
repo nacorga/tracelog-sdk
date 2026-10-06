@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 
+import ts from "typescript";
+
 const packageDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workspaceDirectory = path.resolve(packageDirectory, "../..");
 const distributionDirectory = path.join(packageDirectory, "dist");
@@ -26,6 +28,25 @@ function withoutExports(source) {
  */
 function withoutSourceMaps(source) {
   return source.replace(/^\/\/# sourceMappingURL=.*$\n?/gm, "");
+}
+
+/**
+ * The bundle carries no comments: they document the source, which is
+ * published beside it, and weigh a quarter of the gzipped runtime. The
+ * printer reprints the same program and changes no code.
+ */
+function withoutComments(source) {
+  return ts
+    .createPrinter({ removeComments: true })
+    .printFile(
+      ts.createSourceFile(
+        "tracelog.js",
+        source,
+        ts.ScriptTarget.Latest,
+        false,
+        ts.ScriptKind.JS,
+      ),
+    );
 }
 
 const contractPath = path.join(
@@ -82,11 +103,13 @@ const constants = [
   `const TAG_EVENT_PATTERN = ${JSON.stringify(contract.TAG_EVENT_PATTERN)};`,
   `const tagSightingKinds = ${JSON.stringify(contract.tagSightingKinds)};`,
 ].join("\n");
-const runtime = [constants, coreSource, webSource]
-  .map((source) =>
-    withoutExports(withoutImports(withoutSourceMaps(source))).trim(),
-  )
-  .join("\n");
+const runtime = withoutComments(
+  [constants, coreSource, webSource]
+    .map((source) =>
+      withoutExports(withoutImports(withoutSourceMaps(source))).trim(),
+    )
+    .join("\n"),
+).trim();
 
 /**
  * The published surface, written by hand because the bundle inlines its

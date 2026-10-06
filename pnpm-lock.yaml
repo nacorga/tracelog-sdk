@@ -72,6 +72,9 @@ importers:
       '@tracelog/event-contract':
         specifier: workspace:*
         version: link:../event-contract
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
 
   packages/event-contract:
     dependencies:

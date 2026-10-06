@@ -51,6 +51,7 @@
   },
   "devDependencies": {
     "@tracelog/capture-core": "workspace:*",
-    "@tracelog/event-contract": "workspace:*"
+    "@tracelog/event-contract": "workspace:*",
+    "typescript": "5.9.3"
   }
 }

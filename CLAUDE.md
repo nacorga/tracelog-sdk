@@ -29,7 +29,7 @@ first. Never pick a side silently.
   `Date.now()`. Tests control time.
 - **The bundle is a concatenation**, not a bundler's output:
   `packages/capture-web/build.mjs` joins the emitted modules of `capture-core`
-  and `capture-web`, strips imports and `export` keywords, and inlines the
+  and `capture-web`, strips imports, `export` keywords and comments, and inlines the
   `event-contract` constants **by name**. A constant the core newly imports
   and the list omits is a `ReferenceError` on a customer's page, with every
   gate green; a re-export (`export { x } from "./y.js"`) reaches the bundle
