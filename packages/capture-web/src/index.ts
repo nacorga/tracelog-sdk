@@ -7,6 +7,7 @@ import {
   type CaptureStorage,
   type ConversionOptions,
   type InitOptions,
+  type StepOptions,
   type TransportResponse,
 } from "@tracelog/capture-core";
 import { systemClock } from "./clock.js";
@@ -293,9 +294,9 @@ const TraceLog = {
       return engine?.consent.state() ?? "unknown";
     },
   },
-  step(name: string, context?: object): void {
-    if (heldForInit(() => TraceLog.step(name, context))) return;
-    engine?.step(name, context);
+  step(name: string, context?: object, options?: StepOptions): void {
+    if (heldForInit(() => TraceLog.step(name, context, options))) return;
+    engine?.step(name, context, options);
     reportDiagnostic();
   },
   conversion(name: string, options: ConversionOptions): void {

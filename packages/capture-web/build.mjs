@@ -136,6 +136,10 @@ export interface Item {
   price?: number;
 }
 
+export interface StepOptions {
+  items?: Item[];
+}
+
 export interface ConversionOptions {
   identifier: string;
   value?: number;
@@ -150,7 +154,7 @@ export interface ConversionOptions {
 declare const TraceLog: {
   init(options: InitOptions): void;
   consent: { grant(): void; deny(): void; state(): ConsentState };
-  step(name: string, context?: object): void;
+  step(name: string, context?: object, options?: StepOptions): void;
   conversion(name: string, options: ConversionOptions): void;
 };
 

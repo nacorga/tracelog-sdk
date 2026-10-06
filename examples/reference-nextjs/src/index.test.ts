@@ -22,12 +22,31 @@ describe("reference integration", () => {
     runDeclaredCheckoutPath("order_123");
 
     expect(sdk.init).toHaveBeenCalledOnce();
-    expect(sdk.step).toHaveBeenCalledWith("checkout_started", { cartItems: 2 });
+    expect(sdk.step).toHaveBeenCalledWith(
+      "checkout_started",
+      { cartItems: 2 },
+      {
+        items: [
+          { id: "sku-shirt", name: "Linen shirt", quantity: 1, price: 59.95 },
+        ],
+      },
+    );
     expect(sdk.conversion).toHaveBeenCalledWith("purchase_completed", {
       identifier: "order_123",
       value: 99.95,
       currency: "EUR",
       context: { checkoutVersion: "v2" },
+      items: [
+        { id: "sku-shirt", name: "Linen shirt", quantity: 1, price: 59.95 },
+        {
+          id: "sku-scarf",
+          name: "Wool scarf",
+          category: "Accessories",
+          quantity: 1,
+          price: 40,
+        },
+      ],
+      recurring: false,
     });
   });
 });

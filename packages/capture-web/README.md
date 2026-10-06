@@ -69,14 +69,14 @@ visitors nothing.
 
 That is all of it, and it is what the major version protects.
 
-| Call                              | Does                                                               |
-| --------------------------------- | ------------------------------------------------------------------ |
-| `TraceLog.init(options)`          | Configures the runtime. `key` is the project's public key.         |
-| `TraceLog.consent.grant()`        | Allows capture. Queued delivery begins.                            |
-| `TraceLog.consent.deny()`         | Keeps the runtime inert.                                           |
-| `TraceLog.consent.state()`        | `"unknown" \| "granted" \| "denied"`.                              |
-| `TraceLog.step(name, context?)`   | A declared step of the conversion path.                            |
-| `TraceLog.conversion(name, opts)` | A declared conversion. `opts.identifier` is its stable identifier. |
+| Call                                   | Does                                                                                                                                           |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TraceLog.init(options)`               | Configures the runtime. `key` is the project's public key.                                                                                     |
+| `TraceLog.consent.grant()`             | Allows capture. Queued delivery begins.                                                                                                        |
+| `TraceLog.consent.deny()`              | Keeps the runtime inert.                                                                                                                       |
+| `TraceLog.consent.state()`             | `"unknown" \| "granted" \| "denied"`.                                                                                                          |
+| `TraceLog.step(name, context?, opts?)` | A declared step of the conversion path. `opts.items` are the items it shows.                                                                   |
+| `TraceLog.conversion(name, opts)`      | A declared conversion. `opts.identifier` is its stable identifier. `opts.items`, `opts.scheduledFor` and `opts.recurring` say what it was for. |
 
 `init` also accepts `mode: "verification"`, which a distributed platform artifact
 declares for its platform's own test order. A site's own snippet never sets it —
@@ -100,6 +100,10 @@ type a name TraceLog already knows.
 The events your tracking plan declares, with their context. Not page views, not
 clicks, not scroll, not keystrokes. Errors are captured only when they occur
 inside the conversion path, attached to the step where they happened.
+
+A conversion may carry its items, the day a booking is for and whether it
+recurs, and a step the items it shows; a malformed one is left out and the
+event sent without it.
 
 Beside each conversion, which GA4, Meta and Google Ads tags the page requested
 just before and after it — the tag's kind, its id and, for Meta, the event —
