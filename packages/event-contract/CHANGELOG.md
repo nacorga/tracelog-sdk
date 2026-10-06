@@ -18,6 +18,13 @@ carry it forward.
 This package, `@tracelog/capture-core` and `@tracelog/capture-web` carry one
 number between them.
 
+## [2.1.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.0.1...event-contract@2.1.0) (2026-10-06)
+
+
+### Added
+
+* **event-contract:** items, the day a booking is for and the recurrence ([a1ef6d1](https://github.com/nacorga/tracelog-sdk/commit/a1ef6d144b265192f089baf67c367b35b6d030fd))
+
 ## [2.0.1](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.0.0...event-contract@2.0.1) (2026-10-02)
 
 
