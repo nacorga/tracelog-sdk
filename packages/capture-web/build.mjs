@@ -97,6 +97,9 @@ const constants = [
   `const MAX_BATCH_EVENTS = ${JSON.stringify(contract.MAX_BATCH_EVENTS)};`,
   `const MAX_CONTEXT_BYTES = ${JSON.stringify(contract.MAX_CONTEXT_BYTES)};`,
   `const MAX_ERROR_MESSAGE_BYTES = ${JSON.stringify(contract.MAX_ERROR_MESSAGE_BYTES)};`,
+  `const MAX_ITEMS = ${JSON.stringify(contract.MAX_ITEMS)};`,
+  `const MAX_ITEMS_BYTES = ${JSON.stringify(contract.MAX_ITEMS_BYTES)};`,
+  `const MAX_ITEM_TEXT_LENGTH = ${JSON.stringify(contract.MAX_ITEM_TEXT_LENGTH)};`,
   `const MAX_TAG_SIGHTINGS = ${JSON.stringify(contract.MAX_TAG_SIGHTINGS)};`,
   `const TAG_SIGHTINGS_CONTEXT_KEY = ${JSON.stringify(contract.TAG_SIGHTINGS_CONTEXT_KEY)};`,
   `const TAG_ID_PATTERNS = ${JSON.stringify(contract.TAG_ID_PATTERNS)};`,
@@ -124,11 +127,24 @@ export interface InitOptions {
   mode?: "verification";
 }
 
+export interface Item {
+  id: string;
+  name: string;
+  category?: string;
+  quantity: number;
+  /** The price of one unit; on a conversion, in its currency. */
+  price?: number;
+}
+
 export interface ConversionOptions {
   identifier: string;
   value?: number;
   currency?: string;
   context?: object;
+  items?: Item[];
+  /** The day a booking is for, YYYY-MM-DD. */
+  scheduledFor?: string;
+  recurring?: boolean;
 }
 
 declare const TraceLog: {

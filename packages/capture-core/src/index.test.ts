@@ -1,7 +1,9 @@
 import {
   eventBatchSchema,
+  eventSchema,
   MAX_BATCH_BYTES,
   MAX_CONTEXT_BYTES,
+  MAX_ITEMS_BYTES,
   TAG_SIGHTINGS_CONTEXT_KEY,
   tagSightingReportSchema,
 } from "@tracelog/event-contract";
@@ -984,5 +986,232 @@ describe("tag sightings", () => {
     await first;
     expect(queue(storage).events).toEqual([]);
     expect(runtime.circuitState()).toBe("closed");
+  });
+});
+
+/** Items of distinct ids whose list serializes to exactly `bytes`. */
+function itemsOfBytes(
+  bytes: number,
+): { id: string; name: string; quantity: number }[] {
+  const size = (items: unknown) =>
+    new TextEncoder().encode(JSON.stringify(items)).byteLength;
+  const items: { id: string; name: string; quantity: number }[] = [];
+  while (size(items) < bytes) {
+    items.push({
+      id: `item-${items.length}`,
+      name: "x".repeat(256),
+      quantity: 1,
+    });
+  }
+  for (let index = items.length - 1; size(items) > bytes; index -= 1) {
+    const item = items[index]!;
+    item.name = item.name.slice(
+      0,
+      Math.max(1, item.name.length - (size(items) - bytes)),
+    );
+  }
+  return items;
+}
+
+/**
+ * The three optional fields of 2.1.0 ([spec/capture.md] § The conversion
+ * path): what the contract would keep is sent, and a malformed one is left
+ * out while its event still goes, counted as nothing.
+ */
+describe("the items, the day and the recurrence", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const item = { id: "sku-1", name: "Linen shirt", quantity: 1 };
+  const malformed: readonly (readonly [string, unknown])[] = [
+    ["items", "sku-1"],
+    ["items", []],
+    [
+      "items",
+      Array.from({ length: 101 }, (_, index) => ({
+        ...item,
+        id: `sku-${index}`,
+      })),
+    ],
+    ["items", itemsOfBytes(MAX_ITEMS_BYTES + 1)],
+    ["items", [{ name: "Linen shirt", quantity: 1 }]],
+    ["items", [{ id: "sku-1", quantity: 1 }]],
+    ["items", [{ id: "sku-1", name: "Linen shirt" }]],
+    ["items", [{ ...item, name: "" }]],
+    ["items", [{ ...item, name: "x".repeat(257) }]],
+    ["items", [{ ...item, quantity: 0 }]],
+    ["items", [{ ...item, quantity: 1.5 }]],
+    ["items", [{ ...item, quantity: 2 ** 53 }]],
+    ["items", [{ ...item, price: -1 }]],
+    ["items", [{ ...item, sku: "LS-1" }]],
+    ["scheduledFor", "2026-02-29"],
+    ["scheduledFor", "2026-13-01"],
+    ["scheduledFor", "2026-10-6"],
+    ["scheduledFor", "2026-10-06T00:00:00Z"],
+    ["scheduledFor", 20261006],
+    ["recurring", "yes"],
+    ["recurring", 1],
+    ["recurring", null],
+  ];
+  const sound: readonly (readonly [string, unknown])[] = [
+    ["items", [item]],
+    ["items", itemsOfBytes(MAX_ITEMS_BYTES)],
+    ["scheduledFor", "2028-02-29"],
+    ["recurring", true],
+    ["recurring", false],
+  ];
+
+  /** The one case the runtime keeps by cutting: an item carrying another key. */
+  function isNotCut([, value]: readonly [string, unknown]): boolean {
+    return !(
+      Array.isArray(value) && value.some((line) => "sku" in Object(line))
+    );
+  }
+
+  function sent(requests: ReturnType<typeof setup>["requests"]): Event[] {
+    return requests.flatMap((request) => request.batch.events);
+  }
+
+  it("sends the three as given, and a step's items through its third argument", () => {
+    const { runtime, requests } = setup();
+    runtime.engine.consent.grant();
+    const items = [
+      { id: "sku-1", name: "Linen shirt", quantity: 2 },
+      {
+        id: "sku-2",
+        name: "Wool scarf",
+        category: "Accessories",
+        quantity: 1,
+        price: 24.5,
+      },
+    ];
+    runtime.engine.step("cart_viewed", undefined, { items: [item] });
+    runtime.engine.conversion("purchase_completed", {
+      identifier: "order_123",
+      items,
+      scheduledFor: "2028-02-29",
+      recurring: false,
+    });
+
+    const [, step, conversion] = sent(requests);
+    expect(step).toMatchObject({ kind: "step", items: [item] });
+    expect(step).not.toHaveProperty("context");
+    expect(conversion).toMatchObject({
+      kind: "conversion",
+      items,
+      scheduledFor: "2028-02-29",
+      recurring: false,
+    });
+  });
+
+  it("leaves a malformed one out, sends its event, and counts no drop", () => {
+    for (const [key, value] of malformed.filter(isNotCut)) {
+      const { runtime, requests } = setup();
+      runtime.engine.consent.grant();
+      runtime.engine.conversion("purchase_completed", {
+        identifier: "order_123",
+        [key]: value,
+      });
+      if (key === "items")
+        runtime.engine.step("cart_viewed", undefined, {
+          items: value as never,
+        });
+
+      const events = sent(requests).filter(
+        (event) => event.kind !== "session_start",
+      );
+      expect(
+        events,
+        `${key}: ${JSON.stringify(value).slice(0, 80)}`,
+      ).toHaveLength(key === "items" ? 2 : 1);
+      for (const event of events) expect(event).not.toHaveProperty(key);
+      expect(runtime.drops()).toEqual([]);
+    }
+  });
+
+  it("keeps an item and leaves out its other keys", () => {
+    const { runtime, requests } = setup();
+    runtime.engine.consent.grant();
+    runtime.engine.conversion("purchase_completed", {
+      identifier: "order_123",
+      items: [{ ...item, sku: "LS-1", colour: "white" } as never],
+    });
+
+    const conversion = sent(requests)[1];
+    expect(conversion?.kind === "conversion" && conversion.items).toEqual([
+      item,
+    ]);
+  });
+
+  it("sends a field exactly when the contract keeps it, and every event parses", () => {
+    const cases = [...malformed, ...sound].filter(isNotCut);
+    for (const [key, value] of cases) {
+      const { runtime, requests } = setup();
+      runtime.engine.consent.grant();
+      runtime.engine.conversion("purchase_completed", {
+        identifier: "order_123",
+        [key]: value,
+      });
+      const [, conversion] = sent(requests);
+      const kept = eventSchema.parse({ ...conversion, [key]: value });
+      expect(
+        conversion !== undefined && key in conversion,
+        `${key}: ${JSON.stringify(value).slice(0, 80)}`,
+      ).toBe(key in JSON.parse(JSON.stringify(kept)));
+      for (const event of sent(requests)) {
+        expect(eventSchema.safeParse(event).success).toBe(true);
+      }
+    }
+  });
+
+  it("keeps a step's items when it is buffered before the grant", () => {
+    const { runtime, requests } = setup();
+    runtime.engine.step("cart_viewed", undefined, { items: [item] });
+    expect(requests).toEqual([]);
+    runtime.engine.consent.grant();
+
+    expect(sent(requests)[1]).toMatchObject({ kind: "step", items: [item] });
+  });
+
+  it("sends a second conversion at every cap beside a first one in flight", () => {
+    const storage = new MemoryStorage();
+    const requests: Parameters<CaptureTransport["send"]>[0][] = [];
+    const runtime = createCaptureEngine(
+      {
+        transport: {
+          send(request) {
+            requests.push(request);
+            return new Promise<TransportResponse>(() => undefined);
+          },
+        },
+        storage,
+        clock: new MutableClock(),
+      },
+      acquisition,
+    );
+    runtime.engine.init({ key: validKey });
+    runtime.engine.consent.grant();
+    const atEveryCap = (identifier: string) => ({
+      identifier: identifier.padEnd(256, "x"),
+      value: 1_000_000,
+      currency: "EUR",
+      context: { padding: "x".repeat(MAX_CONTEXT_BYTES - 14) },
+      items: itemsOfBytes(MAX_ITEMS_BYTES),
+      scheduledFor: "2028-02-29",
+      recurring: true,
+    });
+
+    runtime.engine.conversion(`a${"x".repeat(63)}`, atEveryCap("order_1"));
+    runtime.engine.conversion(`b${"x".repeat(63)}`, atEveryCap("order_2"));
+
+    expect(requests).toHaveLength(2);
+    expect(
+      requests[1]?.batch.events.map((event) =>
+        event.kind === "conversion" ? event.identifier.slice(0, 7) : event.kind,
+      ),
+    ).toEqual(["order_2"]);
+    expect(requests[1]?.batch.events[0]).toMatchObject({
+      items: itemsOfBytes(MAX_ITEMS_BYTES),
+    });
   });
 });
