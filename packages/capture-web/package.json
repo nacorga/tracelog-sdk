@@ -1,6 +1,6 @@
 {
   "name": "@tracelog/capture-web",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "The TraceLog browser capture runtime: consent-first, pinned per version.",
   "keywords": [
     "conversion",

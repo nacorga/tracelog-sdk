@@ -18,6 +18,19 @@ patch, and neither requires reading your code.
 Entries after 1.0.0 are drafted from the commits that touched this package and
 edited before release.
 
+## [2.1.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.0.1...capture-web@2.1.0) (2026-10-06)
+
+
+### Added
+
+* **capture-core:** a conversion's items, day and recurrence, and a step's items ([98a5dd6](https://github.com/nacorga/tracelog-sdk/commit/98a5dd6daa131cbc92ddf8ad271a53bc243d4e72))
+* **capture-web:** step takes its items as a third argument ([32eddbf](https://github.com/nacorga/tracelog-sdk/commit/32eddbfa4023eaff4dfb24e4b80c081266b3dd50))
+
+
+### Fixed
+
+* **capture-web:** the bundle carries no comments ([da8d145](https://github.com/nacorga/tracelog-sdk/commit/da8d145e9bb8ac5bece5e9a59fb0f1e47bc212e3))
+
 ## [2.0.1](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.0.0...capture-web@2.0.1) (2026-10-02)
 
 
