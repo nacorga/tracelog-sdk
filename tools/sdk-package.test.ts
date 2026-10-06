@@ -280,12 +280,23 @@ TraceLog.consent.grant();
 TraceLog.consent.deny();
 TraceLog.step("checkout");
 TraceLog.step("checkout", { plan: "free" });
+TraceLog.step("checkout", undefined, {
+  items: [{ id: "sku-1", name: "Linen shirt", quantity: 1 }],
+});
 TraceLog.conversion("purchase", { identifier: "order-1" });
 TraceLog.conversion("purchase", {
   identifier: "order-1",
   value: 12,
   currency: "EUR",
   context: { source: "campaign" },
+});
+TraceLog.conversion("booking", {
+  identifier: "booking-1",
+  items: [
+    { id: "room-1", name: "Double room", category: "Rooms", quantity: 2, price: 90 },
+  ],
+  scheduledFor: "2028-02-29",
+  recurring: false,
 });
 
 export const state: "unknown" | "granted" | "denied" = TraceLog.consent.state();

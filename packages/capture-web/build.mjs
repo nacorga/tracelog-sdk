@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 
+import ts from "typescript";
+
 const packageDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workspaceDirectory = path.resolve(packageDirectory, "../..");
 const distributionDirectory = path.join(packageDirectory, "dist");
@@ -26,6 +28,25 @@ function withoutExports(source) {
  */
 function withoutSourceMaps(source) {
   return source.replace(/^\/\/# sourceMappingURL=.*$\n?/gm, "");
+}
+
+/**
+ * The bundle carries no comments: they document the source, which is
+ * published beside it, and weigh a quarter of the gzipped runtime. The
+ * printer reprints the same program and changes no code.
+ */
+function withoutComments(source) {
+  return ts
+    .createPrinter({ removeComments: true })
+    .printFile(
+      ts.createSourceFile(
+        "tracelog.js",
+        source,
+        ts.ScriptTarget.Latest,
+        false,
+        ts.ScriptKind.JS,
+      ),
+    );
 }
 
 const contractPath = path.join(
@@ -76,17 +97,22 @@ const constants = [
   `const MAX_BATCH_EVENTS = ${JSON.stringify(contract.MAX_BATCH_EVENTS)};`,
   `const MAX_CONTEXT_BYTES = ${JSON.stringify(contract.MAX_CONTEXT_BYTES)};`,
   `const MAX_ERROR_MESSAGE_BYTES = ${JSON.stringify(contract.MAX_ERROR_MESSAGE_BYTES)};`,
+  `const MAX_ITEMS = ${JSON.stringify(contract.MAX_ITEMS)};`,
+  `const MAX_ITEMS_BYTES = ${JSON.stringify(contract.MAX_ITEMS_BYTES)};`,
+  `const MAX_ITEM_TEXT_LENGTH = ${JSON.stringify(contract.MAX_ITEM_TEXT_LENGTH)};`,
   `const MAX_TAG_SIGHTINGS = ${JSON.stringify(contract.MAX_TAG_SIGHTINGS)};`,
   `const TAG_SIGHTINGS_CONTEXT_KEY = ${JSON.stringify(contract.TAG_SIGHTINGS_CONTEXT_KEY)};`,
   `const TAG_ID_PATTERNS = ${JSON.stringify(contract.TAG_ID_PATTERNS)};`,
   `const TAG_EVENT_PATTERN = ${JSON.stringify(contract.TAG_EVENT_PATTERN)};`,
   `const tagSightingKinds = ${JSON.stringify(contract.tagSightingKinds)};`,
 ].join("\n");
-const runtime = [constants, coreSource, webSource]
-  .map((source) =>
-    withoutExports(withoutImports(withoutSourceMaps(source))).trim(),
-  )
-  .join("\n");
+const runtime = withoutComments(
+  [constants, coreSource, webSource]
+    .map((source) =>
+      withoutExports(withoutImports(withoutSourceMaps(source))).trim(),
+    )
+    .join("\n"),
+).trim();
 
 /**
  * The published surface, written by hand because the bundle inlines its
@@ -101,17 +127,34 @@ export interface InitOptions {
   mode?: "verification";
 }
 
+export interface Item {
+  id: string;
+  name: string;
+  category?: string;
+  quantity: number;
+  /** The price of one unit; on a conversion, in its currency. */
+  price?: number;
+}
+
+export interface StepOptions {
+  items?: Item[];
+}
+
 export interface ConversionOptions {
   identifier: string;
   value?: number;
   currency?: string;
   context?: object;
+  items?: Item[];
+  /** The day a booking is for, YYYY-MM-DD. */
+  scheduledFor?: string;
+  recurring?: boolean;
 }
 
 declare const TraceLog: {
   init(options: InitOptions): void;
   consent: { grant(): void; deny(): void; state(): ConsentState };
-  step(name: string, context?: object): void;
+  step(name: string, context?: object, options?: StepOptions): void;
   conversion(name: string, options: ConversionOptions): void;
 };
 

@@ -7,7 +7,9 @@ import {
   eventBatchSchema,
   eventIdSchema,
   eventNameSchema,
+  eventSchema,
   occurredAtSchema,
+  MAX_ITEMS_BYTES,
   MAX_TAG_SIGHTINGS,
   rejectionClassSchema,
   sessionStartEventSchema,
@@ -153,6 +155,137 @@ describe("event contract schemas", () => {
       flags: [{ classification: "late", eventId: event.eventId }],
     });
     expect(rejectionClassSchema.safeParse("expired").success).toBe(true);
+  });
+});
+
+/** Items of distinct ids whose list serializes to exactly `bytes`. */
+function itemsOfBytes(
+  bytes: number,
+): { id: string; name: string; quantity: number }[] {
+  const size = (items: unknown) =>
+    new TextEncoder().encode(JSON.stringify(items)).byteLength;
+  const items: { id: string; name: string; quantity: number }[] = [];
+  while (size(items) < bytes) {
+    items.push({
+      id: `item-${items.length}`,
+      name: "x".repeat(256),
+      quantity: 1,
+    });
+  }
+  for (let index = items.length - 1; size(items) > bytes; index -= 1) {
+    const item = items[index]!;
+    item.name = item.name.slice(
+      0,
+      Math.max(1, item.name.length - (size(items) - bytes)),
+    );
+  }
+  return items;
+}
+
+/**
+ * The three optional fields of 2.1.0 ([spec/data.md] § Validation): where its
+ * event takes it, a malformed one is read as absent and the batch stands.
+ */
+describe("the items, the day and the recurrence", () => {
+  const common = {
+    eventId: "018f0e80-7b20-7000-8000-000000000001",
+    sessionId: "018f0e80-7b20-7000-8000-000000000002",
+    occurredAt: "2026-01-07T12:00:00.000Z",
+  };
+  const conversion = {
+    ...common,
+    kind: "conversion" as const,
+    name: "purchase_completed",
+    identifier: "order_123",
+  };
+  const step = { ...common, kind: "step" as const, name: "checkout_started" };
+  const item = { id: "sku-1", name: "Linen shirt", quantity: 1 };
+  const malformed: readonly (readonly [string, unknown])[] = [
+    ["items", "sku-1"],
+    ["items", []],
+    [
+      "items",
+      Array.from({ length: 101 }, (_, index) => ({
+        ...item,
+        id: `sku-${index}`,
+      })),
+    ],
+    ["items", itemsOfBytes(MAX_ITEMS_BYTES + 1)],
+    ["items", [{ name: "Linen shirt", quantity: 1 }]],
+    ["items", [{ id: "sku-1", quantity: 1 }]],
+    ["items", [{ id: "sku-1", name: "Linen shirt" }]],
+    ["items", [{ ...item, name: "" }]],
+    ["items", [{ ...item, name: "x".repeat(257) }]],
+    ["items", [{ ...item, quantity: 0 }]],
+    ["items", [{ ...item, quantity: 1.5 }]],
+    ["items", [{ ...item, quantity: 2 ** 53 }]],
+    ["items", [{ ...item, price: -1 }]],
+    ["items", [{ ...item, sku: "LS-1" }]],
+    ["scheduledFor", "2026-02-29"],
+    ["scheduledFor", "2026-13-01"],
+    ["scheduledFor", "2026-10-6"],
+    ["scheduledFor", "2026-10-06T00:00:00Z"],
+    ["scheduledFor", 20261006],
+    ["recurring", "yes"],
+    ["recurring", 1],
+    ["recurring", null],
+  ];
+
+  it("parses each as sent on the events that take it", () => {
+    const items = [
+      { id: "sku-1", name: "Linen shirt", quantity: 2 },
+      {
+        id: "sku-2",
+        name: "Wool scarf",
+        category: "Accessories",
+        quantity: 1,
+        price: 24.5,
+      },
+    ];
+    for (const recurring of [true, false]) {
+      const sent = {
+        ...conversion,
+        items,
+        scheduledFor: "2028-02-29",
+        recurring,
+      };
+      expect(conversionEventSchema.parse(sent)).toEqual(sent);
+    }
+    const atTheCap = { ...conversion, items: itemsOfBytes(MAX_ITEMS_BYTES) };
+    expect(conversionEventSchema.parse(atTheCap)).toEqual(atTheCap);
+    const shown = { ...step, items: [item] };
+    expect(eventSchema.parse(shown)).toEqual(shown);
+  });
+
+  it("drops a malformed one and accepts its batch, the event without the key", () => {
+    for (const [key, value] of malformed) {
+      const events = [{ ...conversion, [key]: value }];
+      if (key === "items") events.push({ ...step, items: value } as never);
+      const result = validateEventBatch({ v: 1, events }, clock);
+      expect(
+        result.accepted,
+        `${key}: ${JSON.stringify(value)?.slice(0, 80)}`,
+      ).toBe(true);
+      if (!result.accepted) continue;
+      for (const event of result.batch.events) {
+        expect(JSON.parse(JSON.stringify(event))).not.toHaveProperty(key);
+      }
+    }
+  });
+
+  it("still refuses a key the event does not name", () => {
+    expect(
+      validateEventBatch(
+        { v: 1, events: [{ ...conversion, sku: "LS-1" }] },
+        clock,
+      ),
+    ).toEqual({ accepted: false, classification: "invalid_schema" });
+    expect(
+      validateEventBatch(
+        { v: 1, events: [{ ...step, scheduledFor: "2028-02-29" }] },
+        clock,
+      ),
+    ).toEqual({ accepted: false, classification: "invalid_schema" });
   });
 });
 

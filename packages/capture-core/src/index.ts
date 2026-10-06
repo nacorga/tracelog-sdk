@@ -3,11 +3,15 @@ import {
   MAX_BATCH_EVENTS,
   MAX_CONTEXT_BYTES,
   MAX_ERROR_MESSAGE_BYTES,
+  MAX_ITEM_TEXT_LENGTH,
+  MAX_ITEMS,
+  MAX_ITEMS_BYTES,
   MAX_TAG_SIGHTINGS,
   TAG_SIGHTINGS_CONTEXT_KEY,
   type Event,
   type EventBatch,
   type EventContext,
+  type Item,
   type TagSighting,
   type TagSightingKind,
   type TagSightingReport,
@@ -16,6 +20,7 @@ import {
 export type {
   Event,
   EventBatch,
+  Item,
   TagSighting,
   TagSightingKind,
 } from "@tracelog/event-contract";
@@ -66,6 +71,7 @@ const PUBLIC_KEY_PATTERN = /^tl_pk_[a-z2-7]{26}$/;
  */
 const MAX_IDENTIFIER_LENGTH = 256;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const textEncoder = new TextEncoder();
 
 /**
@@ -108,11 +114,19 @@ export interface InitOptions {
   endpoint?: string;
 }
 
+export interface StepOptions {
+  items?: Item[];
+}
+
 export interface ConversionOptions {
   identifier: string;
   value?: number;
   currency?: string;
   context?: object;
+  items?: Item[];
+  /** The day a booking is for, YYYY-MM-DD. */
+  scheduledFor?: string;
+  recurring?: boolean;
 }
 
 export interface CaptureEngine {
@@ -122,7 +136,7 @@ export interface CaptureEngine {
     deny(): void;
     state(): ConsentState;
   };
-  step(name: string, context?: object): void;
+  step(name: string, context?: object, options?: StepOptions): void;
   conversion(name: string, options: ConversionOptions): void;
 }
 
@@ -188,7 +202,7 @@ export interface CaptureRuntime {
 }
 
 type PendingEvent =
-  | { kind: "step"; name: string; context?: object }
+  | { kind: "step"; name: string; context?: object; options?: StepOptions }
   | { kind: "conversion"; name: string; options: ConversionOptions };
 
 interface StoredQueue {
@@ -325,14 +339,65 @@ function truncateUtf8(value: string, maxBytes: number): string {
   return value.slice(0, low);
 }
 
+function isAmount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 function isConversionValid(options: ConversionOptions): boolean {
   return (
     options.identifier.length >= 1 &&
     options.identifier.length <= MAX_IDENTIFIER_LENGTH &&
-    (options.value === undefined ||
-      (Number.isFinite(options.value) && options.value >= 0)) &&
+    (options.value === undefined || isAmount(options.value)) &&
     (options.currency === undefined || CURRENCY_PATTERN.test(options.currency))
   );
+}
+
+function isItemText(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length >= 1 &&
+    value.length <= MAX_ITEM_TEXT_LENGTH
+  );
+}
+
+/** The list `itemsSchema` accepts, each item cut to its five keys, or nothing. */
+function itemsOf(value: unknown): Item[] | undefined {
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_ITEMS)
+    return undefined;
+  const items: Item[] = [];
+  for (const item of value as unknown[]) {
+    if (typeof item !== "object" || item === null) return undefined;
+    const { id, name, category, quantity, price } = item as Record<
+      string,
+      unknown
+    >;
+    if (
+      !isItemText(id) ||
+      !isItemText(name) ||
+      (category !== undefined && !isItemText(category)) ||
+      !Number.isSafeInteger(quantity) ||
+      (quantity as number) < 1 ||
+      (price !== undefined && !isAmount(price))
+    )
+      return undefined;
+    items.push({
+      id,
+      name,
+      ...(category === undefined ? {} : { category }),
+      quantity: quantity as number,
+      ...(price === undefined ? {} : { price }),
+    });
+  }
+  return serializedBytes(items) <= MAX_ITEMS_BYTES ? items : undefined;
+}
+
+/** What `scheduledForSchema` accepts: a real calendar day. */
+function scheduledForOf(value: unknown): string | undefined {
+  if (typeof value !== "string" || !DAY_PATTERN.test(value)) return undefined;
+  const day = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(value)
+    ? value
+    : undefined;
 }
 
 function serializedBytes(value: unknown): number {
@@ -492,15 +557,19 @@ export function createCaptureEngine(
 
     if (pendingEvent.kind === "step") {
       const context = jsonContext(pendingEvent.context);
+      const items = itemsOf(pendingEvent.options?.items);
       persistEvent({
         ...baseEvent(now, session.id),
         kind: "step",
         name: pendingEvent.name,
         ...(context === undefined ? {} : { context }),
+        ...(items === undefined ? {} : { items }),
       });
     } else {
       const options = pendingEvent.options;
       const context = jsonContext(options.context);
+      const items = itemsOf(options.items);
+      const scheduledFor = scheduledForOf(options.scheduledFor);
       const base = baseEvent(now, session.id);
       if (
         acquisition.mode !== "verification" &&
@@ -518,6 +587,11 @@ export function createCaptureEngine(
           ? {}
           : { currency: options.currency }),
         ...(context === undefined ? {} : { context }),
+        ...(items === undefined ? {} : { items }),
+        ...(scheduledFor === undefined ? {} : { scheduledFor }),
+        ...(typeof options.recurring === "boolean"
+          ? { recurring: options.recurring }
+          : {}),
       });
     }
 
@@ -806,11 +880,12 @@ export function createCaptureEngine(
         return consentState;
       },
     },
-    step(name, context) {
+    step(name, context, options) {
       capture({
         kind: "step",
         name,
         ...(context === undefined ? {} : { context }),
+        ...(options === undefined ? {} : { options }),
       });
     },
     conversion(name, options) {

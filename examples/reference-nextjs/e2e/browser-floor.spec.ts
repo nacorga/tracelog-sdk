@@ -3,7 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, test, type Page } from "@playwright/test";
-import { eventBatchSchema, type EventBatch } from "@tracelog/event-contract";
+import {
+  eventBatchSchema,
+  type EventBatch,
+  type Item,
+} from "@tracelog/event-contract";
 import { validEventBatchFixtures } from "@tracelog/testkit";
 
 const packageDirectory = path.resolve(
@@ -23,6 +27,25 @@ const validKey = `tl_pk_${"a".repeat(26)}`;
 
 type BuildFormat = "esm" | "iife";
 
+/**
+ * The items the reference's declared path sends: on the delivered events they
+ * prove the bundle defines the contract's inlined item constants — a name the
+ * list omits is a ReferenceError only at the call that reaches it.
+ */
+const shirt = {
+  id: "sku-shirt",
+  name: "Linen shirt",
+  quantity: 1,
+  price: 59.95,
+};
+const scarf = {
+  id: "sku-scarf",
+  name: "Wool scarf",
+  category: "Accessories",
+  quantity: 1,
+  price: 40,
+};
+
 interface BrowserRuntime {
   init(options: { key: string; endpoint?: string }): void;
   consent: {
@@ -30,7 +53,7 @@ interface BrowserRuntime {
     deny(): void;
     state(): "unknown" | "granted" | "denied";
   };
-  step(name: string, context?: object): void;
+  step(name: string, context?: object, options?: { items?: Item[] }): void;
   conversion(
     name: string,
     options: {
@@ -38,6 +61,9 @@ interface BrowserRuntime {
       value?: number;
       currency?: string;
       context?: object;
+      items?: Item[];
+      scheduledFor?: string;
+      recurring?: boolean;
     },
   ): void;
 }
@@ -186,6 +212,7 @@ for (const format of ["esm", "iife"] as const) {
         kind: "step",
         name: validEventBatchFixtures.step.events[0].name,
         context: validEventBatchFixtures.step.events[0].context,
+        items: [shirt],
       });
       expect(events[2]).toMatchObject({
         kind: "conversion",
@@ -194,6 +221,8 @@ for (const format of ["esm", "iife"] as const) {
         value: validEventBatchFixtures.conversion.events[0].value,
         currency: validEventBatchFixtures.conversion.events[0].currency,
         context: validEventBatchFixtures.conversion.events[0].context,
+        items: [shirt, scarf],
+        recurring: false,
       });
       // A grant is not remembered ([spec/capture.md] § Consent first).
       expect(

@@ -42,6 +42,9 @@ npm install --save-exact @tracelog/event-contract@2.0.1
   and could not read — and the patterns its ids and events are held
   to, as strings the runtime inlines. The envelope does not validate it; the
   platform reads it, and a value that fails it is no report.
+- **The items** — `itemSchema` and `itemsSchema`, `scheduledForSchema` and
+  their limits. Where its event takes it, a malformed one is read as absent
+  and the event stands.
 
 ## Licence
 
