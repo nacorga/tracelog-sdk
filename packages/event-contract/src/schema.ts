@@ -8,6 +8,9 @@ import {
   MAX_BATCH_EVENTS,
   MAX_CONTEXT_BYTES,
   MAX_ERROR_MESSAGE_BYTES,
+  MAX_ITEM_TEXT_LENGTH,
+  MAX_ITEMS,
+  MAX_ITEMS_BYTES,
   MAX_TAG_SIGHTINGS,
   TAG_EVENT_PATTERN,
   TAG_ID_PATTERNS,
@@ -72,9 +75,39 @@ export const sessionStartEventSchema = z.strictObject({
   device: deviceSchema,
 });
 
+const itemTextSchema = z.string().min(1).max(MAX_ITEM_TEXT_LENGTH);
+export const itemSchema = z.strictObject({
+  id: itemTextSchema,
+  name: itemTextSchema,
+  category: itemTextSchema.optional(),
+  quantity: z.number().int().positive(),
+  /** The price of one unit; on a conversion, in its currency. */
+  price: z.number().nonnegative().optional(),
+});
+export const itemsSchema = z
+  .array(itemSchema)
+  .min(1)
+  .max(MAX_ITEMS)
+  .refine(
+    (items) =>
+      (serializedByteLength(items) ?? Number.POSITIVE_INFINITY) <=
+      MAX_ITEMS_BYTES,
+    { message: `items must serialize to at most ${MAX_ITEMS_BYTES} bytes` },
+  );
+/** A calendar day, leap years included. */
+export const scheduledForSchema = z.iso.date();
+
+/**
+ * A malformed new field is read as absent and its event stands: a broken
+ * line must never lose an order ([spec/data.md] § Validation).
+ */
+const dropped = <T extends z.ZodType>(schema: T) =>
+  schema.optional().catch(undefined);
+
 export const stepEventSchema = z.strictObject({
   ...commonEventFields,
   kind: z.literal("step"),
+  items: dropped(itemsSchema),
 });
 
 export const currencySchema = z.string().regex(/^[A-Z]{3}$/);
@@ -85,6 +118,9 @@ export const conversionEventSchema = z.strictObject({
   identifier: z.string().min(1).max(256),
   value: z.number().nonnegative().optional(),
   currency: currencySchema.optional(),
+  items: dropped(itemsSchema),
+  scheduledFor: dropped(scheduledForSchema),
+  recurring: dropped(z.boolean()),
 });
 
 export const errorMessageSchema = z
@@ -176,6 +212,7 @@ export type EventName = z.infer<typeof eventNameSchema>;
 export type EventMode = z.infer<typeof eventModeSchema>;
 export type EventContext = z.infer<typeof contextSchema>;
 export type Utm = z.infer<typeof utmSchema>;
+export type Item = z.infer<typeof itemSchema>;
 export type Device = z.infer<typeof deviceSchema>;
 export type SessionStartEvent = z.infer<typeof sessionStartEventSchema>;
 export type StepEvent = z.infer<typeof stepEventSchema>;

@@ -13,6 +13,15 @@ export const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
 export const LATE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
+ * The items a conversion or a step carries ([spec/capture.md] § The
+ * conversion path): the largest conversion these allow is under 27 KB, so a
+ * second fits beside it in the runtime's 64 KiB keepalive budget.
+ */
+export const MAX_ITEMS = 100;
+export const MAX_ITEMS_BYTES = 16 * 1024;
+export const MAX_ITEM_TEXT_LENGTH = 256;
+
+/**
  * The tag sighting: which GA4, Meta and Google Ads tags the page requested
  * around a conversion, carried in that conversion's `context` under
  * `TAG_SIGHTINGS_CONTEXT_KEY` ([spec/capture.md] § Tag sightings). The
