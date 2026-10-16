@@ -87,6 +87,17 @@ export const validEventBatchFixtures = {
   },
 } as const satisfies Record<Event["kind"], EventBatch>;
 
+/** A session start the runtime sent because a page loaded (from 2.2.0). */
+export const pageSessionStart = {
+  v: 1,
+  events: [
+    {
+      ...validEventBatchFixtures.session_start.events[0],
+      opening: "page",
+    },
+  ],
+} as const satisfies EventBatch;
+
 const validationStepEvent = {
   kind: "step",
   eventId: eventIds.fixture,

@@ -436,3 +436,70 @@ describe("the tag sighting report", () => {
     ).toBe(true);
   });
 });
+
+describe("the opening", () => {
+  const common = {
+    eventId: "018f0e80-7b20-7000-8000-000000000001",
+    sessionId: "018f0e80-7b20-7000-8000-000000000002",
+    occurredAt: "2026-01-07T12:00:00.000Z",
+  };
+  const start = {
+    ...common,
+    kind: "session_start" as const,
+    name: "session_started",
+    utm: {},
+    landingPage: "https://shop.example/",
+    device: "desktop" as const,
+  };
+  const batch = (...events: unknown[]) => ({ v: 1, events });
+
+  it("parses a session start with the opening and without it, as sent", () => {
+    expect(
+      sessionStartEventSchema.parse({ ...start, opening: "page" }),
+    ).toEqual({ ...start, opening: "page" });
+    expect(sessionStartEventSchema.parse(start)).toEqual(start);
+    const both = batch(
+      { ...start, opening: "page" },
+      { ...start, eventId: "018f0e80-7b20-7000-8000-000000000003" },
+    );
+    expect(validateEventBatch(both, clock)).toEqual({
+      accepted: true,
+      batch: both,
+      flags: [],
+    });
+  });
+
+  it("refuses any other value of the opening", () => {
+    for (const opening of ["event", "PAGE", "", true, null]) {
+      expect(validateEventBatch(batch({ ...start, opening }), clock)).toEqual({
+        accepted: false,
+        classification: "invalid_schema",
+      });
+    }
+  });
+
+  it("refuses the opening on a step, a conversion and an error", () => {
+    const others = [
+      { ...common, kind: "step", name: "checkout_started" },
+      {
+        ...common,
+        kind: "conversion",
+        name: "purchase_completed",
+        identifier: "order_123",
+      },
+      {
+        ...common,
+        kind: "error",
+        name: "checkout_error",
+        message: "failed",
+        stepName: "checkout_started",
+      },
+    ];
+    for (const event of others) {
+      expect(validateEventBatch(batch(event), clock).accepted).toBe(true);
+      expect(
+        validateEventBatch(batch({ ...event, opening: "page" }), clock),
+      ).toEqual({ accepted: false, classification: "invalid_schema" });
+    }
+  });
+});

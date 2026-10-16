@@ -73,6 +73,12 @@ export const sessionStartEventSchema = z.strictObject({
   utm: utmSchema,
   landingPage: z.string(),
   device: deviceSchema,
+  /**
+   * Present when the runtime opened the session because a page loaded with
+   * consent granted; absent when it opened on the first step, conversion or
+   * error. Read from 2.2.0; no runtime writes it before 2.3.0.
+   */
+  opening: z.literal("page").optional(),
 });
 
 const itemTextSchema = z.string().min(1).max(MAX_ITEM_TEXT_LENGTH);
