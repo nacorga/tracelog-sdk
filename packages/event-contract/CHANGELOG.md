@@ -18,6 +18,13 @@ carry it forward.
 This package, `@tracelog/capture-core` and `@tracelog/capture-web` carry one
 number between them.
 
+## [2.2.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.1.0...event-contract@2.2.0) (2026-10-16)
+
+
+### Added
+
+* **event-contract:** a session start says it opened on the page ([c848322](https://github.com/nacorga/tracelog-sdk/commit/c8483220757a544ff0f113efb769129bbd407f76))
+
 ## [2.1.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.0.1...event-contract@2.1.0) (2026-10-06)
 
 
