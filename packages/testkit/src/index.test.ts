@@ -9,6 +9,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   EVENT_CONTRACT_FIXTURE_INSTANT,
+  pageSessionStart,
   validationClassFixtures,
   validEventBatchFixtures,
 } from "./index.js";
@@ -34,6 +35,16 @@ describe("event contract golden fixtures", () => {
         expectTypeOf(result.batch).toEqualTypeOf<EventBatch>();
       }
     }
+  });
+
+  it("parses a session start that opened on the page", () => {
+    const parsed = eventBatchSchema.parse(roundTrip(pageSessionStart));
+    expect(parsed).toEqual(pageSessionStart);
+    expect(validateEventBatch(parsed, clock)).toEqual({
+      accepted: true,
+      batch: pageSessionStart,
+      flags: [],
+    });
   });
 
   it("fails rejected fixtures with exactly their pinned class", () => {

@@ -45,6 +45,8 @@ npm install --save-exact @tracelog/event-contract@2.1.0
 - **The items** — `itemSchema` and `itemsSchema`, `scheduledForSchema` and
   their limits. Where its event takes it, a malformed one is read as absent
   and the event stands.
+- **The opening** — `opening: "page"` on a `session_start` the runtime sent
+  because a page loaded; absent, the session opened on an event.
 
 ## Licence
 

@@ -46,6 +46,9 @@ first. Never pick a side silently.
   and deploys; then the major. A runtime pinned at an old version keeps sending
   the old value for as long as a page holds it, so the accepted set only ever
   grows.
+  A field the runtime writes on its own takes the same order as two minors:
+  the release whose schemas read it, then, once the platform has pinned and
+  deployed it, the release whose runtime writes it.
 - **A version is a fact.** No `v/latest/` on the CDN, and a published version
   is never overwritten. npm keeps a `latest` dist-tag on every package and
   refuses to delete it, so it moves with each release; what pins a consumer is
