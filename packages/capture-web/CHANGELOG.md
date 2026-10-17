@@ -18,6 +18,13 @@ patch, and neither requires reading your code.
 Entries after 1.0.0 are drafted from the commits that touched this package and
 edited before release.
 
+## [2.3.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.2.0...capture-web@2.3.0) (2026-10-17)
+
+
+### Added
+
+* **capture-web:** the page it loads on opens the session ([259cad7](https://github.com/nacorga/tracelog-sdk/commit/259cad70dc2f4bc14c0b1827b80c870fe443bd93))
+
 ## [2.2.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.1.0...capture-web@2.2.0) (2026-10-16)
 
 
