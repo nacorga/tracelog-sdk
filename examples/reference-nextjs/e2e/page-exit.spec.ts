@@ -34,8 +34,8 @@ const validKey = `tl_pk_${"a".repeat(26)}`;
 interface Door {
   origin: string;
   received: EventBatch["events"];
-  /** Holds the first preflight open, so the first send is still in flight. */
-  holdFirstPreflight: boolean;
+  /** Holds the next preflight open, so the next send is still in flight. */
+  holdNextPreflight: boolean;
   preflightHeld: Promise<void>;
   /** Answers the held preflight, the way a slow network finally does. */
   release(): void;
@@ -63,12 +63,11 @@ async function body(request: IncomingMessage): Promise<string> {
 
 async function openDoor(): Promise<Door> {
   const held: { response: ServerResponse; origin: string }[] = [];
-  let preflights = 0;
   let signalHeld: () => void = () => undefined;
   const door: Door = {
     origin: "",
     received: [],
-    holdFirstPreflight: false,
+    holdNextPreflight: false,
     preflightHeld: new Promise((resolve) => {
       signalHeld = resolve;
     }),
@@ -83,8 +82,8 @@ async function openDoor(): Promise<Door> {
       "Access-Control-Max-Age": "0",
     };
     if (request.method === "OPTIONS") {
-      preflights += 1;
-      if (door.holdFirstPreflight && preflights === 1) {
+      if (door.holdNextPreflight) {
+        door.holdNextPreflight = false;
         held.push({ response, origin: cors["Access-Control-Allow-Origin"] });
         signalHeld();
         return;
@@ -135,6 +134,8 @@ test.beforeEach(async () => {
      * both before the runtime hears them, so every engine can show it.
      */
     const silent = request.url?.includes("silent") === true;
+    /** `?ungranted` leaves the grant to the test, so it can leave at once. */
+    const ungranted = request.url?.includes("ungranted") === true;
     if (request.url === "/tracelog.js") {
       response
         .writeHead(200, { "Content-Type": "text/javascript" })
@@ -147,7 +148,7 @@ ${silent ? '<script>for (const name of ["visibilitychange", "pagehide"]) window.
 <script src="/tracelog.js"></script>
 <script>
 TraceLog.init({ key: ${JSON.stringify(validKey)}, endpoint: ${JSON.stringify(`${door.origin}/v1/events`)} });
-TraceLog.consent.grant();
+${ungranted ? "" : "TraceLog.consent.grant();"}
 </script>
 <a id="leave" href="${elsewhere.origin}/signup">Sign up</a>`,
     );
@@ -195,14 +196,16 @@ test("a step taken just before leaving arrives", async ({ page }) => {
 test("a step whose send is still in flight when the visitor leaves arrives", async ({
   page,
 }) => {
-  door.holdFirstPreflight = true;
   await page.goto(`${site.origin}/pricing`);
+  // The page's own start leaves at the grant; the step's send is the next.
+  await expect.poll(names, { timeout: 5_000 }).toContain("session_started");
+  door.holdNextPreflight = true;
   await page.evaluate(() => {
     (
       window as unknown as { TraceLog: { step(name: string): void } }
     ).TraceLog.step("signup_started");
   });
-  // The runtime's first send carries the step; its preflight is held open.
+  // The step's send is in flight; its preflight is held open.
   await door.preflightHeld;
   await leave(page);
   door.release();
@@ -244,4 +247,28 @@ test("a step taken just before leaving arrives when the page fires no hide event
   await leave(page);
 
   await expect.poll(names, { timeout: 5_000 }).toContain("signup_started");
+});
+
+/**
+ * A visitor who accepts the banner and leaves for another site at once: the
+ * page's start leaves at the grant, so it arrives even where the page fires no
+ * hide event, as WebKit was measured to ([spec/capture.md] § Delivery).
+ */
+test("a grant followed at once by a navigation to another site delivers the start", async ({
+  page,
+}) => {
+  await page.goto(`${site.origin}/pricing?silent&ungranted`);
+  await page.evaluate(() => {
+    (
+      window as unknown as { TraceLog: { consent: { grant(): void } } }
+    ).TraceLog.consent.grant();
+  });
+  await leave(page);
+
+  await expect.poll(names, { timeout: 5_000 }).toContain("session_started");
+  expect(
+    door.received.find((event) => event.kind === "session_start"),
+  ).toMatchObject({
+    opening: "page",
+  });
 });

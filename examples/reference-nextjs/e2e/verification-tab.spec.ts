@@ -104,4 +104,9 @@ test("the mark follows the tab to its next page and back from a payment taken el
     ["cart", "verification"],
     ["purchase", "verification"],
   ]);
+  // The tab's first page opened its session, and says so with the mark.
+  expect(events.find((event) => event.kind === "session_start")).toMatchObject({
+    mode: "verification",
+    opening: "page",
+  });
 });

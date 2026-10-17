@@ -302,6 +302,25 @@ TraceLog.conversion("booking", {
 export const state: "unknown" | "granted" | "denied" = TraceLog.consent.state();
 `,
       );
+      // A host that binds the core says which pages are pages of the visit.
+      // The core publishes `exports` alone: its hosts resolve it the modern
+      // way, so only the modern consumer reads it.
+      writeFileSync(
+        path.join(consumerRoot, "core-consumer.ts"),
+        `import { createCaptureEngine } from "@tracelog/capture-core";
+
+const runtime = createCaptureEngine(
+  {
+    transport: { send: async () => ({ status: 202 }) },
+    storage: { getItem: () => null, setItem() {}, removeItem() {} },
+    clock: { now: () => new Date(0) },
+  },
+  { utm: {}, landingPage: "https://shop.example/", device: "desktop" },
+);
+runtime.open();
+runtime.pageRestored();
+`,
+      );
       writeFileSync(
         path.join(consumerRoot, "tsconfig.json"),
         `${JSON.stringify(
@@ -316,7 +335,7 @@ export const state: "unknown" | "granted" | "denied" = TraceLog.consent.state();
               // The consumer's own island: no @types from a parent tree.
               types: [],
             },
-            include: ["consumer.ts"],
+            include: ["consumer.ts", "core-consumer.ts"],
           },
           null,
           2,
