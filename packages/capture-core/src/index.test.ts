@@ -1215,3 +1215,205 @@ describe("the items, the day and the recurrence", () => {
     });
   });
 });
+
+/**
+ * A session is one record per visit, opened on the first page the visitor
+ * loads once consent is granted, and every consented page keeps it open
+ * ([spec/capture.md] § The session).
+ */
+describe("the session opens on the page", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const MINUTE = 60 * 1000;
+
+  function sent(requests: ReturnType<typeof setup>["requests"]): Event[] {
+    return requests.flatMap((request) => request.batch.events);
+  }
+
+  function starts(requests: ReturnType<typeof setup>["requests"]): Event[] {
+    return sent(requests).filter((event) => event.kind === "session_start");
+  }
+
+  /** Another page of the visit: a new engine on the same storage, later. */
+  function nextPage(storage: MemoryStorage, after: number) {
+    const page = setup([], acquisition, undefined, storage);
+    page.clock.advance(after);
+    return page;
+  }
+
+  it("writes nothing and sends nothing before a decision", async () => {
+    const { runtime, storage, requests } = setup();
+
+    runtime.open();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect([...storage.values.keys()]).toEqual([]);
+    expect(requests).toEqual([]);
+  });
+
+  it("sends the page's start at the grant, ahead of what was held", () => {
+    const { runtime, requests } = setup();
+
+    runtime.engine.step("checkout_started");
+    runtime.open();
+    runtime.engine.consent.grant();
+
+    expect(requests[0]?.batch.events).toEqual([
+      expect.objectContaining({
+        kind: "session_start",
+        opening: "page",
+        landingPage: acquisition.landingPage,
+        referrer: acquisition.referrer,
+      }),
+    ]);
+    const events = sent(requests);
+    expect(events.map((event) => event.kind)).toEqual([
+      "session_start",
+      "step",
+    ]);
+    expect(events[1]?.sessionId).toBe(events[0]?.sessionId);
+  });
+
+  it("sends one start however often the page grants and opens", async () => {
+    const { runtime, requests } = setup();
+
+    runtime.open();
+    runtime.engine.consent.grant();
+    runtime.engine.consent.grant();
+    runtime.open();
+    runtime.engine.consent.grant();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(starts(requests)).toHaveLength(1);
+  });
+
+  it("keeps the visit open on its later pages, each one moving its activity", async () => {
+    const first = setup();
+    first.runtime.open();
+    first.runtime.engine.consent.grant();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const second = nextPage(first.storage, 20 * MINUTE);
+    second.runtime.open();
+    second.runtime.engine.consent.grant();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(starts(second.requests)).toEqual([]);
+    expect(first.storage.values.get("__tl.a")).toBe(
+      String(second.clock.now().getTime()),
+    );
+
+    const third = nextPage(first.storage, 40 * MINUTE);
+    third.runtime.open();
+    third.runtime.engine.consent.grant();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(starts(third.requests)).toEqual([]);
+  });
+
+  it("opens a new session on a page loaded after thirty idle minutes", async () => {
+    const first = setup();
+    first.runtime.open();
+    first.runtime.engine.consent.grant();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const later = nextPage(first.storage, 30 * MINUTE);
+    later.runtime.open();
+    later.runtime.engine.consent.grant();
+
+    const [start] = starts(later.requests);
+    expect(start).toMatchObject({ opening: "page" });
+    expect(start?.sessionId).not.toBe(starts(first.requests)[0]?.sessionId);
+  });
+
+  it("opens a new session on a grant after a denial on the same page", async () => {
+    const { runtime, requests } = setup();
+
+    runtime.open();
+    runtime.engine.consent.grant();
+    await vi.advanceTimersByTimeAsync(0);
+    runtime.engine.consent.deny();
+    runtime.engine.consent.grant();
+
+    const [first, second] = starts(requests);
+    expect(second).toMatchObject({ opening: "page" });
+    expect(second?.sessionId).not.toBe(first?.sessionId);
+  });
+
+  it("opens the next session where a step happens once the page's expired, without saying it opened on the page", async () => {
+    const { runtime, clock, requests } = setup();
+
+    runtime.open();
+    runtime.engine.consent.grant();
+    await vi.advanceTimersByTimeAsync(0);
+    clock.advance(31 * MINUTE);
+    runtime.engine.step("checkout_started");
+
+    const [, second] = starts(requests);
+    expect(second).toBeDefined();
+    expect(second).not.toHaveProperty("opening");
+  });
+
+  it("sends its start without an opening at the first step of an engine never opened", () => {
+    const { runtime, requests } = setup();
+
+    runtime.engine.consent.grant();
+    runtime.engine.step("checkout_started");
+
+    const [start] = starts(requests);
+    expect(start).toBeDefined();
+    expect(start).not.toHaveProperty("opening");
+  });
+
+  it("counts a page restored from the cache as a page of the visit", async () => {
+    const { runtime, storage, clock, requests } = setup();
+
+    runtime.engine.consent.grant();
+    runtime.pageRestored();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(requests).toEqual([]);
+    expect(storage.values.has("__tl.a")).toBe(false);
+
+    runtime.open();
+    await vi.advanceTimersByTimeAsync(0);
+    clock.advance(10 * MINUTE);
+    runtime.pageRestored();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(starts(requests)).toHaveLength(1);
+    expect(storage.values.get("__tl.a")).toBe(String(clock.now().getTime()));
+
+    clock.advance(31 * MINUTE);
+    runtime.pageRestored();
+    const restored = starts(requests);
+    expect(restored).toHaveLength(2);
+    expect(restored[1]).toMatchObject({ opening: "page" });
+    expect(restored[1]?.sessionId).not.toBe(restored[0]?.sessionId);
+  });
+
+  it("marks a verification tab's start with its mode and its opening", () => {
+    const { runtime, requests } = setup([], {
+      ...acquisition,
+      mode: "verification",
+    });
+
+    runtime.open();
+    runtime.engine.consent.grant();
+
+    const [start] = starts(requests);
+    expect(start).toMatchObject({ mode: "verification", opening: "page" });
+    expect(eventSchema.safeParse(start).success).toBe(true);
+  });
+
+  it("keeps open() inert behind a remembered denial", async () => {
+    const storage = new MemoryStorage();
+    storage.values.set("__tl.c", "denied");
+    const { runtime, requests } = setup([], acquisition, undefined, storage);
+
+    runtime.open();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect([...storage.values.entries()]).toEqual([["__tl.c", "denied"]]);
+    expect(requests).toEqual([]);
+  });
+});

@@ -12,6 +12,7 @@ import {
   type EventBatch,
   type EventContext,
   type Item,
+  type SessionStartEvent,
   type TagSighting,
   type TagSightingKind,
   type TagSightingReport,
@@ -197,6 +198,14 @@ export interface CaptureRuntime {
   /** `hidden` is a page being hidden: it sends at once, whatever is in flight. */
   flush(hidden?: boolean): Promise<void>;
   captureError(message: string): void;
+  /**
+   * This page is a page of the visit ([spec/capture.md] § The session): once
+   * consent is granted, the session opens here if none is open, and the
+   * page counts as activity either way. Called once per page by the host.
+   */
+  open(): void;
+  /** The page came back from the browser's cache: a page of the visit again. */
+  pageRestored(): void;
   drops(): DropCount[];
   circuitState(): CircuitState;
 }
@@ -471,6 +480,10 @@ export function createCaptureEngine(
   let consecutiveFailures = 0;
   let circuit: CircuitState = "closed";
   let nextProbeAt = 0;
+  /** The host called `open()`: this is a page of the visit. */
+  let pageOpen = false;
+  /** This page has opened, or touched, the session. */
+  let opened = false;
 
   function scheduleFlush(delay: number): void {
     if (flushTimer !== undefined) clearTimeout(flushTimer);
@@ -515,6 +528,34 @@ export function createCaptureEngine(
     };
   }
 
+  function sessionStart(now: Date, sessionId: string): SessionStartEvent {
+    return {
+      ...baseEvent(now, sessionId),
+      kind: "session_start",
+      name: "session_started",
+      ...(acquisition.referrer === undefined
+        ? {}
+        : { referrer: acquisition.referrer }),
+      utm: acquisition.utm,
+      landingPage: acquisition.landingPage,
+      device: acquisition.device,
+    };
+  }
+
+  /**
+   * The page opens the session, or touches the one open, and a start it
+   * opened leaves at once, as a step does ([spec/capture.md] § Delivery).
+   */
+  function openNow(): void {
+    opened = true;
+    const now = ports.clock.now();
+    const session = sessionFor(now);
+    if (session.started) {
+      persistEvent({ ...sessionStart(now, session.id), opening: "page" });
+      sendTaken();
+    }
+  }
+
   function recordInvalidEvent(): void {
     const queue = readQueue(ports.storage);
     addDrop(queue, "invalid_event");
@@ -541,19 +582,7 @@ export function createCaptureEngine(
 
     const now = ports.clock.now();
     const session = sessionFor(now);
-    if (session.started) {
-      persistEvent({
-        ...baseEvent(now, session.id),
-        kind: "session_start",
-        name: "session_started",
-        ...(acquisition.referrer === undefined
-          ? {}
-          : { referrer: acquisition.referrer }),
-        utm: acquisition.utm,
-        landingPage: acquisition.landingPage,
-        device: acquisition.device,
-      });
-    }
+    if (session.started) persistEvent(sessionStart(now, session.id));
 
     if (pendingEvent.kind === "step") {
       const context = jsonContext(pendingEvent.context);
@@ -609,7 +638,8 @@ export function createCaptureEngine(
   }
 
   /**
-   * A step, and a conversion that is not held, leaves when it is taken: a
+   * A session the page opened, a step, and a conversion that is not held each
+   * leave when they are taken: a
    * click that navigates to another site may fire no hide event at all, and a
    * send started by the click itself is the one that arrives ([spec/capture.md]
    * § Delivery). An open circuit keeps it queued for the probe.
@@ -856,6 +886,8 @@ export function createCaptureEngine(
         consentState = "granted";
         safeRemove(ports.storage, CONSENT_KEY);
         ports.sightings?.start();
+        // The page's start precedes what was held, which joins its session.
+        if (pageOpen && !opened) openNow();
         const buffered = pending;
         pending = [];
         for (const pendingEvent of buffered) emit(pendingEvent, true);
@@ -865,6 +897,7 @@ export function createCaptureEngine(
       deny() {
         if (!initialized) return;
         consentState = "denied";
+        opened = false;
         pending = [];
         lastDeclaredName = undefined;
         ports.sightings?.stop();
@@ -906,19 +939,7 @@ export function createCaptureEngine(
       }
       const now = ports.clock.now();
       const session = sessionFor(now);
-      if (session.started) {
-        persistEvent({
-          ...baseEvent(now, session.id),
-          kind: "session_start",
-          name: "session_started",
-          ...(acquisition.referrer === undefined
-            ? {}
-            : { referrer: acquisition.referrer }),
-          utm: acquisition.utm,
-          landingPage: acquisition.landingPage,
-          device: acquisition.device,
-        });
-      }
+      if (session.started) persistEvent(sessionStart(now, session.id));
       persistEvent({
         ...baseEvent(now, session.id),
         kind: "error",
@@ -926,6 +947,15 @@ export function createCaptureEngine(
         message: truncateUtf8(message, MAX_ERROR_MESSAGE_BYTES),
         stepName: lastDeclaredName,
       });
+    },
+    open() {
+      if (!initialized) return;
+      pageOpen = true;
+      if (consentState === "granted" && !opened) openNow();
+    },
+    pageRestored() {
+      opened = false;
+      if (pageOpen && consentState === "granted") openNow();
     },
     drops() {
       const queue = readQueue(ports.storage);
