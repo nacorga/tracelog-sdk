@@ -5,6 +5,10 @@ import TraceLog from "./index.js";
 interface Recorded {
   readonly requests: { url: string; body: unknown; keepalive: boolean }[];
   hidden(): Promise<void>;
+  /** The browser shows the page, or restores it from its cache. */
+  pageshow(persisted: boolean): void;
+  /** A prerendered page is shown. */
+  activated(): void;
 }
 
 interface Page {
@@ -12,6 +16,9 @@ interface Page {
   opener?: { postMessage(message: unknown): void } | null;
   /** The tab's `sessionStorage`, shared by the pages of one tab. */
   tab?: Map<string, string>;
+  /** The page is inside a frame: its `top` is another window. */
+  framed?: boolean;
+  prerendering?: boolean;
 }
 
 function storageOf(values: Map<string, string>) {
@@ -34,9 +41,11 @@ function browser(page: Page = {}): Recorded {
     navigator: { userAgent: "Mozilla/5.0 (Macintosh)" },
     localStorage: storageOf(storage),
     sessionStorage: storageOf(page.tab ?? new Map<string, string>()),
+    top: undefined as unknown,
     document: {
       referrer: "",
       visibilityState: "visible",
+      prerendering: page.prerendering ?? false,
       addEventListener: (name: string, handler: (event: unknown) => void) =>
         documentListeners.set(name, handler),
     },
@@ -54,9 +63,17 @@ function browser(page: Page = {}): Recorded {
       };
     },
   };
+  value.top = page.framed === true ? {} : value;
   (globalThis as { window?: unknown }).window = value;
   return {
     requests,
+    pageshow(persisted) {
+      listeners.get("pageshow")?.({ persisted });
+    },
+    activated() {
+      value.document.prerendering = false;
+      documentListeners.get("prerenderingchange")?.(undefined);
+    },
     async hidden() {
       value.document.visibilityState = "hidden";
       documentListeners.get("visibilitychange")?.(undefined);
@@ -93,20 +110,30 @@ describe("capture-web public API", () => {
     });
     await recorded.hidden();
 
-    const batch = recorded.requests[0]?.body as {
-      events: { kind: string; mode?: string; identifier?: string }[];
-    };
+    const events = recorded.requests.flatMap(
+      (request) =>
+        (
+          request.body as {
+            events: { kind: string; mode?: string; identifier?: string }[];
+          }
+        ).events,
+    );
     expect(recorded.requests[0]?.url).toBe("https://api.tracelog.io/v1/events");
     // Every send outlives the page that started it ([spec/capture.md] § Delivery).
     expect(recorded.requests.map((request) => request.keepalive)).toEqual([
       true,
+      true,
     ]);
-    expect(batch.events.map((event) => event.mode)).toEqual([
+    expect(events.map((event) => event.kind)).toEqual([
+      "session_start",
+      "conversion",
+    ]);
+    expect(events.map((event) => event.mode)).toEqual([
       "verification",
       "verification",
     ]);
     expect(
-      batch.events.find((event) => event.kind === "conversion")?.identifier,
+      events.find((event) => event.kind === "conversion")?.identifier,
     ).toBe("wc-1042");
   });
 });
@@ -266,5 +293,93 @@ describe("capture-web calls before init", () => {
 
     runtime.init({ key, endpoint });
     expect(runtime.consent.state()).toBe("unknown");
+  });
+});
+
+type Sent = { kind: string; opening?: string; sessionId: string };
+
+function sentEvents(recorded: Recorded): Sent[] {
+  return recorded.requests.flatMap(
+    (request) => (request.body as { events: Sent[] }).events,
+  );
+}
+
+/**
+ * The first page a consenting visitor loads opens the session, at once
+ * ([spec/capture.md] § The session).
+ */
+describe("capture-web opens the session on the page", () => {
+  it("sends the page's start at the grant", async () => {
+    const { TraceLog: runtime, recorded } = await load({});
+    runtime.init({ key, endpoint });
+    runtime.consent.grant();
+
+    expect(sentEvents(recorded)).toEqual([
+      expect.objectContaining({ kind: "session_start", opening: "page" }),
+    ]);
+  });
+
+  it("sends the start before a step held for init", async () => {
+    const { TraceLog: runtime, recorded } = await load({});
+    runtime.step("checkout_started");
+    runtime.consent.grant();
+    runtime.init({ key, endpoint });
+
+    const events = sentEvents(recorded);
+    expect(events.map((event) => [event.kind, event.opening])).toEqual([
+      ["session_start", "page"],
+      ["step", undefined],
+    ]);
+    expect(events[1]?.sessionId).toBe(events[0]?.sessionId);
+  });
+
+  it("opens nothing inside a frame", async () => {
+    const { TraceLog: runtime, recorded } = await load({ framed: true });
+    runtime.init({ key, endpoint });
+    runtime.consent.grant();
+    await recorded.hidden();
+
+    expect(recorded.requests).toEqual([]);
+  });
+
+  it("opens a prerendered page only once it is shown", async () => {
+    const { TraceLog: runtime, recorded } = await load({ prerendering: true });
+    runtime.init({ key, endpoint });
+    runtime.consent.grant();
+    await recorded.hidden();
+    expect(recorded.requests).toEqual([]);
+
+    recorded.activated();
+    expect(sentEvents(recorded)).toEqual([
+      expect.objectContaining({ kind: "session_start", opening: "page" }),
+    ]);
+  });
+
+  it("tells the engine of a page restored from the cache, and of no other show", async () => {
+    const restored = vi.fn();
+    vi.doMock("@tracelog/capture-core", async (importOriginal) => {
+      const actual =
+        await importOriginal<typeof import("@tracelog/capture-core")>();
+      return {
+        ...actual,
+        createCaptureEngine(
+          ...args: Parameters<typeof actual.createCaptureEngine>
+        ) {
+          const engine = actual.createCaptureEngine(...args);
+          return { ...engine, pageRestored: restored };
+        },
+      };
+    });
+    try {
+      const { TraceLog: runtime, recorded } = await load({});
+      runtime.init({ key, endpoint });
+
+      recorded.pageshow(false);
+      expect(restored).not.toHaveBeenCalled();
+      recorded.pageshow(true);
+      expect(restored).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.doUnmock("@tracelog/capture-core");
+    }
   });
 });

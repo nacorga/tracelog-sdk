@@ -97,9 +97,12 @@ type a name TraceLog already knows.
 
 ## What it captures
 
-The events your tracking plan declares, with their context. Not page views, not
-clicks, not scroll, not keystrokes. Errors are captured only when they occur
-inside the conversion path, attached to the step where they happened.
+The events your tracking plan declares, with their context, and once consent is
+granted, one session record a visit, made on its first page: where the visit
+came from and the page it landed on. No later page is recorded — not page
+views, not clicks, not scroll, not keystrokes. Errors are captured only when
+they occur inside the conversion path, attached to the step where they
+happened.
 
 A conversion may carry its items, the day a booking is for and whether it
 recurs, and a step the items it shows; a malformed one is left out and the
@@ -121,10 +124,10 @@ An IP address is read once when the event arrives to derive a two-letter country
 code, then discarded.
 
 Events queue locally once consent allows, batch, and deliver with retry, backoff
-and circuit breaking. A step is sent when it is taken, and every send uses
-`keepalive`, so a click that leaves the page — even for another site — does not
-cancel it. Delivery failure surfaces as a diagnosable condition, never as
-silent loss.
+and circuit breaking. A session start and a step are sent when they are taken,
+and every send uses `keepalive`, so a click that leaves the page — even for
+another site — does not cancel it. Delivery failure surfaces as a diagnosable
+condition, never as silent loss.
 
 ## Where it runs
 
