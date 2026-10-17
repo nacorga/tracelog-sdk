@@ -51,6 +51,17 @@ Consent comes first: before a consent decision the engine creates no
 identifier, no storage and no traffic. A denial is remembered; a grant is not,
 so the host grants on every load while consent stands.
 
+## What the host calls
+
+`engine` is the capture surface — `init`, `consent`, `step`, `conversion` —
+and the runtime beside it carries the host's own calls. **`open()`** says this
+page is a page of the visit: once consent is granted the session opens there
+if none is open, and the page counts as activity either way; the host calls it
+once per page. **`pageRestored()`** says the page came back from the
+browser's cache and is a page of the visit again. A host that calls neither
+opens its session on its first step, conversion or error, as before 2.3.0.
+`flush`, `captureError`, `drops` and `circuitState` are the host's too.
+
 ## The wire format
 
 Events leave in the envelope

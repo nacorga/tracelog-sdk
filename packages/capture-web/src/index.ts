@@ -54,6 +54,8 @@ let engine: CaptureEngine | undefined;
 let verification: VerificationMode | undefined;
 let configValid = false;
 let listenersInstalled = false;
+/** This page has told the engine it is a page of the visit. */
+let pageOpened = false;
 /**
  * Calls made before `init`, made in order once it has run, up to the same 100
  * the engine holds before consent; past that they are dropped
@@ -222,6 +224,31 @@ function installListeners(): void {
       void runtime?.flush(true).finally(reportDiagnostic);
     }
   });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) runtime?.pageRestored();
+  });
+}
+
+/** What the bundle's target lib may not name yet. */
+interface PrerenderingDocument {
+  prerendering?: boolean;
+}
+
+/**
+ * A page of the visit opens the session ([spec/capture.md] § The session); a
+ * page inside a frame is not one, and a prerendered page becomes one only
+ * when it is shown.
+ */
+function openPage(): void {
+  if (pageOpened || window.top !== window) return;
+  if ((window.document as PrerenderingDocument).prerendering === true) {
+    window.document.addEventListener("prerenderingchange", openPage, {
+      once: true,
+    });
+    return;
+  }
+  pageOpened = true;
+  runtime?.open();
 }
 
 function init(options: WebInitOptions): void {
@@ -269,6 +296,7 @@ function init(options: WebInitOptions): void {
     ...(options.endpoint === undefined ? {} : { endpoint }),
   });
   installListeners();
+  openPage();
   const held = early;
   early = [];
   for (const call of held) call();
