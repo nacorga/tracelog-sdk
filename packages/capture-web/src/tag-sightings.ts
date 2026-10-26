@@ -24,6 +24,8 @@ export const TAG_SIGHTING_MEMORY = 100;
  * The browser's Resource Timing buffer, at its default size. A port that read
  * this many entries from before it started may have lost the ones after the
  * buffer filled, so it rules nothing out from what the record does not show.
+ * A page that empties its record or shrinks its buffer hides that loss from
+ * the port: the limit of the rule ([spec/capture.md] § Tag sightings).
  */
 export const RESOURCE_TIMING_BUFFER = 250;
 
