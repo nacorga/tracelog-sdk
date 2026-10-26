@@ -18,6 +18,13 @@ patch, and neither requires reading your code.
 Entries after 1.0.0 are drafted from the commits that touched this package and
 edited before release.
 
+## [2.4.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.3.1...capture-web@2.4.0) (2026-10-26)
+
+
+### Added
+
+* **capture-web:** the first in the published types ([154032e](https://github.com/nacorga/tracelog-sdk/commit/154032e137540c007771a3e60ad1657494b975af))
+
 ## [2.3.1](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.3.0...capture-web@2.3.1) (2026-10-26)
 
 
