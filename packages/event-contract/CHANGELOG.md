@@ -18,6 +18,13 @@ carry it forward.
 This package, `@tracelog/capture-core` and `@tracelog/capture-web` carry one
 number between them.
 
+## [2.4.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.3.1...event-contract@2.4.0) (2026-10-26)
+
+
+### Added
+
+* **event-contract:** whether a conversion is the person's first ([8caccf9](https://github.com/nacorga/tracelog-sdk/commit/8caccf9e6add76ed788ba0aa8e0d7f02a29bb8f7))
+
 ## [2.3.1](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.3.0...event-contract@2.3.1) (2026-10-26)
 
 
