@@ -127,6 +127,7 @@ export const conversionEventSchema = z.strictObject({
   items: dropped(itemsSchema),
   scheduledFor: dropped(scheduledForSchema),
   recurring: dropped(z.boolean()),
+  first: dropped(z.boolean()),
 });
 
 export const errorMessageSchema = z

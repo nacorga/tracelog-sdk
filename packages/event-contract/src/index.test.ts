@@ -290,6 +290,69 @@ describe("the items, the day and the recurrence", () => {
 });
 
 /**
+ * The optional field of 2.4.0 ([spec/data.md] § Validation): whether the
+ * site's records hold no earlier conversion of that kind by the same person.
+ */
+describe("whether a conversion is the person's first", () => {
+  const common = {
+    eventId: "018f0e80-7b20-7000-8000-000000000001",
+    sessionId: "018f0e80-7b20-7000-8000-000000000002",
+    occurredAt: "2026-01-07T12:00:00.000Z",
+  };
+  const conversion = {
+    ...common,
+    kind: "conversion" as const,
+    name: "purchase_completed",
+    identifier: "order_123",
+  };
+
+  it("keeps true and false as sent, beside the recurrence", () => {
+    for (const first of [true, false]) {
+      const sent = { ...conversion, recurring: false, first };
+      expect(conversionEventSchema.parse(sent)).toEqual(sent);
+      const result = validateEventBatch({ v: 1, events: [sent] }, clock);
+      expect(result.accepted).toBe(true);
+      if (!result.accepted) continue;
+      expect(result.batch.events[0]).toMatchObject({ first });
+    }
+  });
+
+  it('drops "yes", 1 and null and accepts the batch, the conversion without the key', () => {
+    for (const value of ["yes", 1, null]) {
+      const result = validateEventBatch(
+        { v: 1, events: [{ ...conversion, first: value }] },
+        clock,
+      );
+      expect(result.accepted, JSON.stringify(value)).toBe(true);
+      if (!result.accepted) continue;
+      expect(result.batch.events).toHaveLength(1);
+      expect(
+        JSON.parse(JSON.stringify(result.batch.events[0])),
+      ).not.toHaveProperty("first");
+    }
+  });
+
+  it("refuses it on a step as invalid_schema", () => {
+    expect(
+      validateEventBatch(
+        {
+          v: 1,
+          events: [
+            {
+              ...common,
+              kind: "step",
+              name: "checkout_started",
+              first: true,
+            },
+          ],
+        },
+        clock,
+      ),
+    ).toEqual({ accepted: false, classification: "invalid_schema" });
+  });
+});
+
+/**
  * The report a conversion's context carries under `__tl.tags`
  * ([spec/capture.md] § Tag sightings): the runtime's output is tested against
  * it, and the platform parses with it, so both sides of the wire read one
