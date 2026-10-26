@@ -47,6 +47,7 @@ describe("reference integration", () => {
         },
       ],
       recurring: false,
+      first: true,
     });
   });
 });

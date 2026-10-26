@@ -128,6 +128,11 @@ export interface ConversionOptions {
   /** The day a booking is for, YYYY-MM-DD. */
   scheduledFor?: string;
   recurring?: boolean;
+  /**
+   * Whether the site's records hold no earlier conversion of this kind by the
+   * same person.
+   */
+  first?: boolean;
 }
 
 export interface CaptureEngine {
@@ -621,6 +626,7 @@ export function createCaptureEngine(
         ...(typeof options.recurring === "boolean"
           ? { recurring: options.recurring }
           : {}),
+        ...(typeof options.first === "boolean" ? { first: options.first } : {}),
       });
     }
 

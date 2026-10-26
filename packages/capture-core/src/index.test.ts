@@ -1199,6 +1199,7 @@ describe("the items, the day and the recurrence", () => {
       items: itemsOfBytes(MAX_ITEMS_BYTES),
       scheduledFor: "2028-02-29",
       recurring: true,
+      first: true,
     });
 
     runtime.engine.conversion(`a${"x".repeat(63)}`, atEveryCap("order_1"));
@@ -1213,6 +1214,75 @@ describe("the items, the day and the recurrence", () => {
     expect(requests[1]?.batch.events[0]).toMatchObject({
       items: itemsOfBytes(MAX_ITEMS_BYTES),
     });
+  });
+});
+
+/**
+ * The optional field of 2.4.0 ([spec/capture.md] § The conversion path):
+ * whether the site's records hold no earlier conversion of this kind by the
+ * same person, written as given after the recurrence, and left out, counted as
+ * nothing, when it is not a boolean.
+ */
+describe("whether a conversion is the person's first", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function conversions(
+    requests: ReturnType<typeof setup>["requests"],
+  ): Event[] {
+    return requests
+      .flatMap((request) => request.batch.events)
+      .filter((event) => event.kind === "conversion");
+  }
+
+  it("writes true and false as given, after the recurrence", () => {
+    for (const first of [true, false]) {
+      const { runtime, requests } = setup();
+      runtime.engine.consent.grant();
+      runtime.engine.conversion("purchase_completed", {
+        identifier: "order_123",
+        recurring: false,
+        first,
+      });
+
+      const [conversion] = conversions(requests);
+      expect(conversion).toMatchObject({ recurring: false, first });
+      const keys = Object.keys(conversion ?? {});
+      expect(keys.indexOf("first")).toBe(keys.indexOf("recurring") + 1);
+      expect(eventSchema.parse(conversion)).toEqual(conversion);
+      expect(runtime.drops()).toEqual([]);
+    }
+  });
+
+  it('leaves out "yes", 1 and null, sends the conversion, and counts no drop', () => {
+    for (const value of ["yes", 1, null]) {
+      const { runtime, requests } = setup();
+      runtime.engine.consent.grant();
+      runtime.engine.conversion("purchase_completed", {
+        identifier: "order_123",
+        first: value as never,
+      });
+
+      const sent = conversions(requests);
+      expect(sent, JSON.stringify(value)).toHaveLength(1);
+      expect(sent[0]).not.toHaveProperty("first");
+      expect(eventSchema.safeParse(sent[0]).success).toBe(true);
+      expect(runtime.drops()).toEqual([]);
+    }
+  });
+
+  it("keeps it on a conversion buffered before the grant", () => {
+    const { runtime, requests } = setup();
+    runtime.engine.conversion("purchase_completed", {
+      identifier: "order_123",
+      first: true,
+    });
+    expect(requests).toEqual([]);
+    runtime.engine.consent.grant();
+
+    expect(conversions(requests)).toEqual([
+      expect.objectContaining({ kind: "conversion", first: true }),
+    ]);
   });
 });
 
