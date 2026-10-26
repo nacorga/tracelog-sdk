@@ -18,6 +18,13 @@ carry it forward.
 This package, `@tracelog/capture-core` and `@tracelog/capture-web` carry one
 number between them.
 
+## [2.3.1](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.3.0...event-contract@2.3.1) (2026-10-26)
+
+
+### Fixed
+
+* **capture-web:** a deferred runtime rules out the Meta form it could not have missed ([aa0eb2b](https://github.com/nacorga/tracelog-sdk/commit/aa0eb2b3506d0ba7bfb9549e9a5f851af89b4577))
+
 ## [2.3.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.2.0...event-contract@2.3.0) (2026-10-17)
 
 
