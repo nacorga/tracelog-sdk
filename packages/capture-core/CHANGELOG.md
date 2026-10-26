@@ -17,6 +17,13 @@ This package, `@tracelog/capture-web` and `@tracelog/event-contract` carry one
 number between them: the browser runtime's published bytes are this engine's
 bytes, so no version of one is not also a version of the others.
 
+## [2.3.1](https://github.com/nacorga/tracelog-sdk/compare/capture-core@2.3.0...capture-core@2.3.1) (2026-10-26)
+
+
+### Fixed
+
+* **capture-web:** a deferred runtime rules out the Meta form it could not have missed ([aa0eb2b](https://github.com/nacorga/tracelog-sdk/commit/aa0eb2b3506d0ba7bfb9549e9a5f851af89b4577))
+
 ## [2.3.0](https://github.com/nacorga/tracelog-sdk/compare/capture-core@2.2.0...capture-core@2.3.0) (2026-10-17)
 
 
