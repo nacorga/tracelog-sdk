@@ -64,6 +64,7 @@ interface BrowserRuntime {
       items?: Item[];
       scheduledFor?: string;
       recurring?: boolean;
+      first?: boolean;
     },
   ): void;
 }
@@ -223,6 +224,7 @@ for (const format of ["esm", "iife"] as const) {
         context: validEventBatchFixtures.conversion.events[0].context,
         items: [shirt, scarf],
         recurring: false,
+        first: true,
       });
       // A grant is not remembered ([spec/capture.md] § Consent first).
       expect(

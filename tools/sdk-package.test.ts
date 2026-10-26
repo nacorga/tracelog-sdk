@@ -297,6 +297,12 @@ TraceLog.conversion("booking", {
   ],
   scheduledFor: "2028-02-29",
   recurring: false,
+  first: true,
+});
+TraceLog.conversion("purchase", {
+  identifier: "order-2",
+  // @ts-expect-error whether it is the person's first is a boolean
+  first: "yes",
 });
 
 export const state: "unknown" | "granted" | "denied" = TraceLog.consent.state();

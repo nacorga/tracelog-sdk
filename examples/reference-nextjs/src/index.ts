@@ -38,5 +38,6 @@ export function runDeclaredCheckoutPath(
       },
     ],
     recurring: false,
+    first: true,
   });
 }
