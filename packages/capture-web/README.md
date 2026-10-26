@@ -104,9 +104,9 @@ views, not clicks, not scroll, not keystrokes. Errors are captured only when
 they occur inside the conversion path, attached to the step where they
 happened.
 
-A conversion may carry its items, the day a booking is for and whether it
-recurs, and a step the items it shows; a malformed one is left out and the
-event sent without it.
+A conversion may carry its items, the day a booking is for, whether it recurs
+and whether it is the person's first, and a step the items it shows; a
+malformed one is left out and the event sent without it.
 
 Beside each conversion, which GA4, Meta and Google Ads tags the page requested
 just before and after it — the tag's kind, its id and, for Meta, the event —
