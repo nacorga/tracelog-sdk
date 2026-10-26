@@ -9,6 +9,7 @@ import {
   createTagSightingPort,
   matchTagForm,
   matchTagRequest,
+  RESOURCE_TIMING_BUFFER,
   TAG_SIGHTING_MEMORY,
   type TagForm,
 } from "./tag-sightings.js";
@@ -219,6 +220,7 @@ describe("the form reader", () => {
 interface FakeEntry {
   readonly name: string;
   readonly startTime: number;
+  readonly duration: number;
 }
 
 /** `PerformanceObserver`, as far as the port reaches into it. */
@@ -261,8 +263,8 @@ class FakeObserver {
 const NOW = Date.parse("2026-09-21T12:00:00.000Z");
 const PAGE_NOW = 120_000;
 
-function entry(url: string, instant: number): FakeEntry {
-  return { name: url, startTime: PAGE_NOW - (NOW - instant) };
+function entry(url: string, instant: number, duration = 0): FakeEntry {
+  return { name: url, startTime: PAGE_NOW - (NOW - instant), duration };
 }
 
 describe("the port", () => {
@@ -471,6 +473,13 @@ function stubPage(body: FakeNode | null): { body: FakeNode | null } {
 }
 
 const beaconEntry = "https://www.facebook.com/tr/";
+const metaConfiguration =
+  "https://connect.facebook.net/signals/config/1234567890123456?v=2.9.427&r=stable&domain=reference.test";
+
+/** Meta's pixel configuration, requested at `started` and loaded at `ended`. */
+function configurationEntry(started: number, ended: number): FakeEntry {
+  return entry(metaConfiguration, started, ended - started);
+}
 
 describe("the body observer", () => {
   beforeEach(() => {
@@ -601,12 +610,77 @@ describe("the body observer", () => {
     expect(port.unreadAround?.(new Date(NOW + 1_000))).toEqual([]);
   });
 
-  it("started with the body present, rules nothing out over a window that began before it", () => {
+  it("started with the body present after Meta's configuration loaded, rules nothing out over a window that began before it", () => {
     stubPage(bodyNode);
     const port = createTagSightingPort();
     port.start();
+    FakeObserver.instances[0]?.deliver(
+      configurationEntry(NOW - 900, NOW - 800),
+    );
 
     expect(port.unreadAround?.(new Date(NOW + 5_000))).toBeNull();
+    expect(port.unreadAround?.(new Date(NOW + 40_000))).toEqual([]);
+  });
+
+  it("started with the body present before Meta's configuration loaded, reads the window whole: Meta posts nothing before it", () => {
+    stubPage(bodyNode);
+    const port = createTagSightingPort();
+    port.start();
+    const observer = FakeObserver.instances[0];
+    // Requested before the watch began, loaded after it: the load is the sign.
+    observer?.deliver(configurationEntry(NOW - 50, NOW + 30));
+    observer?.deliver(entry(beaconEntry, NOW + 1_000));
+
+    expect(port.unreadAround?.(new Date(NOW + 5_000))).toEqual(["meta"]);
+    // On the edge: the watch began the instant the configuration loaded.
+    const edge = createTagSightingPort();
+    edge.start();
+    FakeObserver.instances[1]?.deliver(configurationEntry(NOW - 50, NOW));
+    expect(edge.unreadAround?.(new Date(NOW + 5_000))).toEqual([]);
+  });
+
+  it("started with the body present on a page with no sign of Meta, reads the window whole", () => {
+    stubPage(bodyNode);
+    const port = createTagSightingPort();
+    port.start();
+    FakeObserver.instances[0]?.deliver(
+      entry(measured.ga4Purchase, NOW - 2_000),
+    );
+
+    expect(port.unreadAround?.(new Date(NOW + 5_000))).toEqual([]);
+  });
+
+  it("started with the body present after a request on Meta's endpoint, rules nothing out before it", () => {
+    stubPage(bodyNode);
+    const port = createTagSightingPort();
+    port.start();
+    // A Meta script the record does not show loading has already posted.
+    FakeObserver.instances[0]?.deliver(
+      entry(measured.metaPageView, NOW - 1_000),
+    );
+
+    expect(port.unreadAround?.(new Date(NOW + 5_000))).toBeNull();
+    expect(port.around(new Date(NOW + 5_000))).toEqual([metaPageView]);
+  });
+
+  it("started with the body present on a full record, rules nothing out from what it does not show", () => {
+    stubPage(bodyNode);
+    const port = createTagSightingPort();
+    port.start();
+    const observer = FakeObserver.instances[0];
+    const before = (count: number) =>
+      Array.from({ length: count }, (_, index) =>
+        entry(
+          `https://reference.test/asset-${index}.png`,
+          NOW - 10_000 + index,
+        ),
+      );
+    observer?.deliver(...before(RESOURCE_TIMING_BUFFER - 1));
+    expect(port.unreadAround?.(new Date(NOW + 5_000))).toEqual([]);
+
+    observer?.deliver(...before(1));
+    expect(port.unreadAround?.(new Date(NOW + 5_000))).toBeNull();
+    // An entry from after the start is not one the buffer held.
     expect(port.unreadAround?.(new Date(NOW + 40_000))).toEqual([]);
   });
 
@@ -643,17 +717,29 @@ describe("the body observer", () => {
     expect(FakeObserver.instances).toHaveLength(1);
     expect(FakeMutationObserver.instances).toHaveLength(1);
 
-    FakeObserver.instances[0]?.deliver(entry(beaconEntry, NOW + 40_000));
+    FakeObserver.instances[0]?.deliver(entry(beaconEntry, NOW - 1_000));
     port.stop();
     expect(FakeObserver.instances[0]?.disconnected).toBe(true);
     expect(FakeMutationObserver.instances[0]?.disconnects).toBe(1);
     expect(FakeMutationObserver.instances[0]?.targets).toEqual([]);
     expect(port.unreadAround?.(new Date(NOW + 40_000))).toBeNull();
 
-    // A new start watches from its own instant, not from the first one's.
+    // A new start watches from its own instant, not from the first one's, and
+    // reads the buffered record afresh: the first start's sign of Meta and its
+    // count are gone with it.
     vi.setSystemTime(NOW + 20_000);
+    vi.stubGlobal("performance", { now: () => PAGE_NOW + 20_000 });
     port.start();
     expect(FakeMutationObserver.instances).toHaveLength(2);
+    FakeObserver.instances[1]?.deliver(
+      ...Array.from({ length: RESOURCE_TIMING_BUFFER - 1 }, (_, index) =>
+        entry(`https://reference.test/asset-${index}.png`, NOW + index),
+      ),
+    );
+    expect(port.unreadAround?.(new Date(NOW + 40_000))).toEqual([]);
+    FakeObserver.instances[1]?.deliver(
+      configurationEntry(NOW + 9_000, NOW + 10_000),
+    );
     expect(port.unreadAround?.(new Date(NOW + 40_000))).toBeNull();
     expect(port.unreadAround?.(new Date(NOW + 50_000))).toEqual([]);
   });

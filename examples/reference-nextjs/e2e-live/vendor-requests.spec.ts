@@ -19,10 +19,13 @@ import {
  * the runtime's `/v1/events` — so every vendor request is the one the script
  * chose to make, by the road it chose. It asserts the property a watch rests
  * on — a tag request the page made is in the conversion's report, or the
- * report says it saw one it could not read — and that Meta's roads are still
- * the ones measured (plans/2026-09-21-the-tag-sighting.md § What was measured,
- * 2026-09-22). A change in the second is Meta moving, not a fault of the
- * runtime: the reading in the plan is taken again.
+ * report says it saw one it could not read — and that Meta still behaves as
+ * measured: its roads are the ones read on 2026-09-22
+ * (plans/2026-09-21-the-tag-sighting.md § What was measured), and it posts
+ * nothing before its pixel's configuration has loaded, read on 2026-10-26,
+ * which is what lets a runtime started on a parsed page rule out a form it did
+ * not watch ([spec/capture.md] § Tag sightings). A change in either is Meta
+ * moving, not a fault of the runtime: the reading is taken again.
  */
 const iifePath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -118,6 +121,7 @@ function checkout(reading: Reading): string {
     quantity: item.quantity,
   }));
   return `<!doctype html><html><head><title>TraceLog reference checkout</title>
+<script>window.__metaForms = []; new MutationObserver((records) => { for (const record of records) for (const node of record.addedNodes) if (node.nodeName === "FORM") window.__metaForms.push(performance.now()); }).observe(document.documentElement, { childList: true, subtree: true });</script>
 <script src="/tracelog.iife.js"></script>
 <script>TraceLog.init({ key: ${js(validKey)}, endpoint: "/v1/events" }); TraceLog.consent.grant();</script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=${ga4Id}"></script>
@@ -300,6 +304,46 @@ function measuredRoads(
   }
 }
 
+/**
+ * What the page's own record shows of Meta before its pixel's configuration
+ * had loaded — a request on its endpoint, or a form it added — read on the
+ * page's clock, the one the runtime reads; an empty list when every one waited
+ * for it. The network's timing would be a second clock.
+ */
+async function postedBeforeConfiguration(page: Page): Promise<string[]> {
+  return page.evaluate((id) => {
+    const entries = performance.getEntriesByType(
+      "resource",
+    ) as PerformanceResourceTiming[];
+    const configuration = entries.find((entry) =>
+      entry.name.startsWith(
+        `https://connect.facebook.net/signals/config/${id}`,
+      ),
+    );
+    if (configuration === undefined) return ["no configuration was loaded"];
+    const loaded = configuration.responseEnd;
+    const posts = entries
+      .filter((entry) => {
+        const url = new URL(entry.name);
+        return (
+          url.hostname.endsWith("facebook.com") &&
+          (url.pathname === "/tr" || url.pathname === "/tr/")
+        );
+      })
+      .map((entry) => ({
+        what: `request at ${Math.round(entry.startTime)}`,
+        at: entry.startTime,
+      }));
+    const forms = (window as typeof window & { __metaForms: number[] })
+      .__metaForms;
+    for (const at of forms)
+      posts.push({ what: `form at ${Math.round(at)}`, at });
+    return posts
+      .filter((post) => post.at < loaded)
+      .map((post) => `${post.what}, before ${Math.round(loaded)}`);
+  }, pixelId);
+}
+
 function metaRoads(
   requests: readonly VendorRequest[],
 ): Record<"PageView" | "Purchase", string[]> {
@@ -353,6 +397,10 @@ for (const name of Object.keys(readings) as ReadingName[]) {
     expect(
       unreported(inWindow, report),
       `requests in no report, of ${JSON.stringify(seen, null, 1)} and ${JSON.stringify(report)}`,
+    ).toEqual([]);
+    expect(
+      await postedBeforeConfiguration(page),
+      `Meta has moved: it posted before its pixel's configuration loaded`,
     ).toEqual([]);
     expect(
       metaRoads(inWindow),
