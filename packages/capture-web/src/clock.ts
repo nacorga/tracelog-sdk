@@ -11,8 +11,8 @@ export const systemClock: Clock = {
 };
 
 /**
- * A Resource Timing entry's start, on the system clock: its reading minus the
- * entry's monotonic age. `performance.timeOrigin` would be a second clock, and
+ * A Resource Timing reading — an entry's start, or its end — on the system
+ * clock: the clock's reading minus the reading's monotonic age. `performance.timeOrigin` would be a second clock, and
  * it can disagree with this one by as much as the machine's clock drifted
  * since the page loaded; the age is read on one clock and the instant on the
  * other, so a sighting and the conversion it is compared with are dated alike

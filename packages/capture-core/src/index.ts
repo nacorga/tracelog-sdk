@@ -101,9 +101,9 @@ export interface TagSightingPort {
   /**
    * Each kind the page requested from `TAG_SIGHTING_BEFORE_MS` before `at` to
    * `TAG_SIGHTING_AFTER_MS` after it whose tag the port could not read, once,
-   * in `tagSightingKinds` order; null when `around` is, and when the port did
-   * not watch that whole window. A port without it reports no `unread`, as
-   * 1.1.0 did.
+   * in `tagSightingKinds` order; null when `around` is, and when the window
+   * does not rule out a form the port did not see. A port without it reports
+   * no `unread`, as 1.1.0 did.
    */
   unreadAround?(at: Date): TagSightingKind[] | null;
 }

@@ -30,12 +30,25 @@ const iifePath = path.resolve(
 const iife = await readFile(iifePath, "utf8");
 const validKey = `tl_pk_${"a".repeat(26)}`;
 /**
- * The runtime loads as a head script does — how the WooCommerce plugin loads
- * it, and where the snippet goes — so observation starts before the body
- * exists and every window is watched whole.
+ * The runtime loads as a synchronous head script, so observation starts
+ * before the body exists and every window is watched whole. The snippet, the
+ * plugin and the module defer it instead: `deferredCheckout`.
  */
 const checkout = `<!doctype html><html><head><title>TraceLog reference checkout</title><script src="/tracelog.iife.js"></script><script>TraceLog.init({ key: "${validKey}", endpoint: "/v1/events" }); TraceLog.consent.grant();</script></head><body></body></html>`;
 const pixelId = "1234567890123456";
+const metaConfiguration = `https://connect.facebook.net/signals/config/${pixelId}?v=2.9.427&r=stable&domain=reference.test`;
+/**
+ * The runtime deferred, as the snippet, the WooCommerce plugin and the
+ * PrestaShop module load it, and started once the document is parsed: the
+ * body exists before observation starts. `configured` puts Meta's pixel
+ * configuration in the head before it, so Meta could have posted unwatched.
+ */
+function deferredCheckout(configured: boolean): string {
+  const configuration = configured
+    ? `<script src="${metaConfiguration}"></script>`
+    : "";
+  return `<!doctype html><html><head><title>TraceLog reference checkout</title>${configuration}<script defer src="/tracelog.iife.js"></script><script>addEventListener("DOMContentLoaded", () => { TraceLog.init({ key: "${validKey}", endpoint: "/v1/events" }); TraceLog.consent.grant(); });</script></head><body></body></html>`;
+}
 const metaEndpoint = "https://www.facebook.com/tr/";
 const metaPurchase = `${metaEndpoint}?id=${pixelId}&ev=Purchase&dl=http%3A%2F%2Freference.test%2Fcheckout&v=2.9.403`;
 const ga4Purchase =
@@ -58,7 +71,7 @@ interface Recorded {
   unrouted(): string[];
 }
 
-async function serve(page: Page): Promise<Recorded> {
+async function serve(page: Page, html = checkout): Promise<Recorded> {
   const requested = new Set<string>();
   const routed = new Set<string>();
   const recorded: Recorded = {
@@ -96,11 +109,19 @@ async function serve(page: Page): Promise<Recorded> {
       await route.fulfill({
         status: 200,
         contentType: "text/html",
-        body: checkout,
+        body: html,
       });
       return;
     }
     recorded.vendors.push(request.url());
+    if (url.hostname === "connect.facebook.net") {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/javascript",
+        body: "",
+      });
+      return;
+    }
     // A form posted into a frame is a document request, answered as the
     // routed reading answered it: WebKit records the frame's `iframe` entry
     // only when its document has a body.
@@ -134,11 +155,32 @@ async function convert(
     meta: "image" | "beacon" | "form";
     ga4After?: number;
     hideAfter?: number;
+    /** Meta's pixel configuration, loaded once the runtime runs, before it converts. */
+    configuration?: string;
   },
 ): Promise<void> {
   await page.goto("http://reference.test/checkout");
+  await page.waitForFunction(() => "TraceLog" in globalThis);
   await page.evaluate(
-    ({ meta, road, endpoint, id, hashed, ga4, ga4After, hideAfter }) => {
+    async ({
+      meta,
+      road,
+      endpoint,
+      id,
+      hashed,
+      ga4,
+      ga4After,
+      hideAfter,
+      configuration,
+    }) => {
+      if (configuration !== undefined) {
+        await new Promise((loaded) => {
+          const script = document.createElement("script");
+          script.src = configuration;
+          script.onload = loaded;
+          document.head.appendChild(script);
+        });
+      }
       const runtime = (
         globalThis as typeof globalThis & {
           TraceLog: {
@@ -208,6 +250,7 @@ async function convert(
       ga4: ga4Purchase,
       ga4After: options.ga4After,
       hideAfter: options.hideAfter,
+      configuration: options.configuration,
     },
   );
 }
@@ -301,5 +344,42 @@ test("Meta's form is read from the two fields that name the pixel and the event,
   expect(delivered).not.toContain(hashedEmail);
   expect(delivered).not.toContain("ud[em]");
   expect(recorded.vendors).toEqual([metaEndpoint]);
+  expect(recorded.unrouted()).toEqual([]);
+});
+
+test("started on a parsed page before Meta's configuration loaded, the report rules out what it did not watch", async ({
+  page,
+}) => {
+  test.setTimeout(45_000);
+  const recorded = await serve(page, deferredCheckout(false));
+  await convert(page, { meta: "image", configuration: metaConfiguration });
+
+  await expect
+    .poll(() => conversionIn(recorded.batches), { timeout: 20_000 })
+    .toBeDefined();
+  expect(reportIn(recorded.batches)).toEqual({
+    complete: true,
+    sightings: [metaSighting],
+    unread: [],
+  });
+  expect(recorded.vendors).toEqual([metaConfiguration, metaPurchase]);
+  expect(recorded.unrouted()).toEqual([]);
+});
+
+test("started on a parsed page after Meta's configuration loaded, the report cannot tell what it did not watch", async ({
+  page,
+}) => {
+  test.setTimeout(45_000);
+  const recorded = await serve(page, deferredCheckout(true));
+  await convert(page, { meta: "image" });
+
+  await expect
+    .poll(() => conversionIn(recorded.batches), { timeout: 20_000 })
+    .toBeDefined();
+  expect(reportIn(recorded.batches)).toEqual({
+    complete: true,
+    sightings: [metaSighting],
+  });
+  expect(recorded.vendors).toEqual([metaConfiguration, metaPurchase]);
   expect(recorded.unrouted()).toEqual([]);
 });

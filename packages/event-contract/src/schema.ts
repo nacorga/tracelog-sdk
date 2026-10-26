@@ -197,9 +197,9 @@ export const tagSightingReportSchema = z.strictObject({
   complete: z.boolean(),
   sightings: z.array(tagSightingSchema).max(MAX_TAG_SIGHTINGS),
   /**
-   * From 1.2.0, in every report whose window the runtime watched whole: each
-   * kind the page requested inside the window whose tag the runtime could
-   * not read, once. A report without it could not tell.
+   * From 1.2.0, in every report whose window rules out a form the runtime
+   * did not see: each kind the page requested inside the window whose tag
+   * the runtime could not read, once. A report without it could not tell.
    */
   unread: z
     .array(z.enum(tagSightingKinds))

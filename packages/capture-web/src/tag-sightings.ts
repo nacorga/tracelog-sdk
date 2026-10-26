@@ -21,6 +21,15 @@ import { instantOfEntry, systemClock } from "./clock.js";
 export const TAG_SIGHTING_MEMORY = 100;
 
 /**
+ * The browser's Resource Timing buffer, at its default size. A port that read
+ * this many entries from before it started may have lost the ones after the
+ * buffer filled, so it rules nothing out from what the record does not show.
+ * A page that empties its record or shrinks its buffer hides that loss from
+ * the port: the limit of the rule ([spec/capture.md] § Tag sightings).
+ */
+export const RESOURCE_TIMING_BUFFER = 250;
+
+/**
  * What either reader answers: a tag it sighted, or a request of a kind it saw
  * and could not read — which keeps its kind alone ([spec/capture.md] § Tag
  * sightings, _What is kept_).
@@ -47,6 +56,22 @@ function onMetaEndpoint(url: URL): boolean {
     (host === "facebook.com" || host.endsWith(".facebook.com")) &&
     (url.pathname === "/tr" || url.pathname === "/tr/")
   );
+}
+
+/**
+ * Meta's pixel configuration, which its script loads before it posts anything
+ * ([spec/capture.md] § Tag sightings, _Read, never intercepted_).
+ */
+function isMetaConfiguration(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.hostname === "connect.facebook.net" &&
+      parsed.pathname.startsWith("/signals/config/")
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** A request on Meta's endpoint whose pixel id does not fit is Meta, unread. */
@@ -152,6 +177,16 @@ export function createTagSightingPort(): TagSightingPort {
    * created, still waiting for the body, or failed.
    */
   let watchedFrom: number | undefined;
+  /**
+   * The first sign of Meta in the page's record, on the system clock: its
+   * pixel's configuration loaded, or a request on its endpoint started.
+   * Before it Meta's script has posted nothing, so no form went unwatched.
+   */
+  let metaFrom = Number.POSITIVE_INFINITY;
+  /** When the request observer started, on the page's monotonic clock. */
+  let startedAt = 0;
+  /** How many entries the record held from before the observer started. */
+  let buffered = 0;
   /** Ordered by `at`, oldest first; at most `TAG_SIGHTING_MEMORY`. */
   let matches: Stamped[] = [];
 
@@ -165,10 +200,21 @@ export function createTagSightingPort(): TagSightingPort {
 
   function record(entries: readonly PerformanceEntry[]): void {
     for (const entry of entries) {
-      remember(
-        matchTagRequest(entry.name),
-        instantOfEntry(entry.startTime).getTime(),
-      );
+      if (entry.startTime < startedAt) buffered += 1;
+      const at = instantOfEntry(entry.startTime).getTime();
+      const match = matchTagRequest(entry.name);
+      remember(match, at);
+      const meta =
+        match !== null &&
+        ("unread" in match ? match.unread : match.sighting.kind) === "meta";
+      if (meta) {
+        metaFrom = Math.min(metaFrom, at);
+      } else if (isMetaConfiguration(entry.name)) {
+        metaFrom = Math.min(
+          metaFrom,
+          instantOfEntry(entry.startTime + entry.duration).getTime(),
+        );
+      }
     }
   }
 
@@ -245,6 +291,7 @@ export function createTagSightingPort(): TagSightingPort {
           return;
         }
         const created = new Observer((list) => record(list.getEntries()));
+        startedAt = performance.now();
         created.observe({ type: "resource", buffered: true });
         observer = created;
       } catch {
@@ -259,6 +306,8 @@ export function createTagSightingPort(): TagSightingPort {
       bodyObserver?.disconnect();
       bodyObserver = undefined;
       watchedFrom = undefined;
+      metaFrom = Number.POSITIVE_INFINITY;
+      buffered = 0;
       matches = [];
     },
     observing() {
@@ -281,13 +330,13 @@ export function createTagSightingPort(): TagSightingPort {
     },
     unreadAround(at) {
       const found = within(at);
-      if (
-        found === null ||
-        watchedFrom === undefined ||
-        watchedFrom > at.getTime() - TAG_SIGHTING_BEFORE_MS
-      ) {
-        return null;
-      }
+      if (found === null || watchedFrom === undefined) return null;
+      // A window it did not watch whole missed no form when Meta had shown
+      // no sign before the watch began — unless the record may have lost it.
+      const missedNone =
+        watchedFrom <= at.getTime() - TAG_SIGHTING_BEFORE_MS ||
+        (watchedFrom <= metaFrom && buffered < RESOURCE_TIMING_BUFFER);
+      if (!missedNone) return null;
       return tagSightingKinds.filter((kind) =>
         found.some((match) => "unread" in match && match.unread === kind),
       );
