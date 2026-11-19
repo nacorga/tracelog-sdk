@@ -38,8 +38,10 @@ npm install --save-exact @tracelog/event-contract@2.4.0
   read.
 - **The tag sighting** — `tagSightingReportSchema`, the report a conversion's
   context carries under `TAG_SIGHTINGS_CONTEXT_KEY` — the tags sighted,
-  whether the report is complete, and from 1.2.0 the kinds it saw requested
-  and could not read — and the patterns its ids and events are held
+  whether the report is complete, from 1.2.0 the kinds it saw requested
+  and could not read, and from 2.5.0 `keyed` on a Meta or Google Ads
+  sighting, whether its requests carried the platform's deduplication key —
+  and the patterns its ids and events are held
   to, as strings the runtime inlines. The envelope does not validate it; the
   platform reads it, and a value that fails it is no report.
 - **The items** — `itemSchema` and `itemsSchema`, `scheduledForSchema` and

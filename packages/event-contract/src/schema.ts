@@ -180,17 +180,27 @@ export const rejectionClassSchema = z.enum([
 
 const tagId = (kind: TagSightingKind) =>
   z.string().regex(new RegExp(TAG_ID_PATTERNS[kind]));
+/**
+ * From 2.5.0, read on a Meta or Google Ads sighting ([spec/capture.md]
+ * § Tag sightings): true when every request the window folded into it carried
+ * its platform's deduplication key — Meta's `eid`, Google Ads' `oid` — with a
+ * non-empty value, false when one did not. Absent is unknown, never false. A
+ * GA4 sighting carries none.
+ */
+const keyed = z.boolean().exactOptional();
 export const tagSightingSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("ga4"), id: tagId("ga4"), event: z.null() }),
   z.strictObject({
     kind: z.literal("meta"),
     id: tagId("meta"),
     event: z.string().regex(new RegExp(TAG_EVENT_PATTERN)).nullable(),
+    keyed,
   }),
   z.strictObject({
     kind: z.literal("google_ads"),
     id: tagId("google_ads"),
     event: z.null(),
+    keyed,
   }),
 ]);
 export const tagSightingReportSchema = z.strictObject({

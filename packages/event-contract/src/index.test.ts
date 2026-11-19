@@ -389,6 +389,40 @@ describe("the tag sighting report", () => {
     }
   });
 
+  it("keeps keyed true or false on Meta and Google Ads, and reads none as unknown", () => {
+    for (const sighting of [meta, ads]) {
+      for (const keyed of [true, false]) {
+        const report = { complete: true, sightings: [{ ...sighting, keyed }] };
+        const parsed = tagSightingReportSchema.safeParse(report);
+        expect(parsed.success, JSON.stringify(report)).toBe(true);
+        expect(parsed.data?.sightings[0]).toMatchObject({ keyed });
+      }
+      const parsed = tagSightingReportSchema.safeParse({
+        complete: true,
+        sightings: [sighting],
+      });
+      expect(parsed.success).toBe(true);
+      expect(parsed.data?.sightings[0]).not.toHaveProperty("keyed");
+    }
+  });
+
+  it("refuses keyed on GA4 and keyed that is not a boolean", () => {
+    for (const sighting of [
+      { ...ga4, keyed: true },
+      { ...meta, keyed: "yes" },
+      { ...ads, keyed: 1 },
+      { ...meta, keyed: null },
+    ]) {
+      expect(
+        tagSightingReportSchema.safeParse({
+          complete: true,
+          sightings: [sighting],
+        }).success,
+        JSON.stringify(sighting),
+      ).toBe(false);
+    }
+  });
+
   it("accepts Google Ads with and without a conversion label", () => {
     for (const id of ["AW-1234567890", "AW-1234567890/AbC-12_xyz"]) {
       expect(
