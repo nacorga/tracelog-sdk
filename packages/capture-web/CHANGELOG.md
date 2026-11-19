@@ -18,6 +18,11 @@ patch, and neither requires reading your code.
 Entries after 1.0.0 are drafted from the commits that touched this package and
 edited before release.
 
+## [2.5.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.4.0...capture-web@2.5.0) (2026-11-19)
+
+
+* **capture-web:** Synchronize tracelog-sdk versions
+
 ## [2.4.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.3.1...capture-web@2.4.0) (2026-10-26)
 
 
