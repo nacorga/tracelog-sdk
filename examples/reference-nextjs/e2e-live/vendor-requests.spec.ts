@@ -21,10 +21,11 @@ import {
  * on — a tag request the page made is in the conversion's report, or the
  * report says it saw one it could not read — and that Meta still behaves as
  * measured: its roads are the ones read on 2026-09-22
- * (plans/2026-09-21-the-tag-sighting.md § What was measured), and it posts
- * nothing before its pixel's configuration has loaded, read on 2026-10-26,
- * which is what lets a runtime started on a parsed page rule out a form it did
- * not watch ([spec/capture.md] § Tag sightings). A change in either is Meta
+ * (plans/2026-09-21-the-tag-sighting.md § What was measured), but for the
+ * twelve-item purchase, which Meta sent by image when read again on 2026-11-20,
+ * and it posts nothing before its pixel's configuration has loaded, read on
+ * 2026-10-26, which is what lets a runtime started on a parsed page rule out a
+ * form it did not watch ([spec/capture.md] § Tag sightings). A change in either is Meta
  * moving, not a fault of the runtime: the reading is taken again. Each Meta and
  * Google Ads sighting is keyed exactly when every request it folded carried
  * its platform's deduplication key, Meta's `eid` and Google Ads' `oid` or
@@ -361,7 +362,7 @@ function measuredRoads(
     case "short":
       return { PageView: ["GET image"], Purchase: ["GET image"] };
     case "items":
-      return { PageView: ["GET image"], Purchase: [long] };
+      return { PageView: ["GET image"], Purchase: ["GET image"] };
     case "matched":
       return { PageView: [long], Purchase: [long] };
   }
