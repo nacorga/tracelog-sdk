@@ -46,12 +46,14 @@ const metaPageView: TagSighting = {
   kind: "meta",
   id: "1234567890123456",
   event: "PageView",
+  keyed: false,
 };
 const metaPurchase: TagSighting = { ...metaPageView, event: "Purchase" };
 const adsLabelled: TagSighting = {
   kind: "google_ads",
   id: "AW-1234567890/AbC-D_efG",
   event: null,
+  keyed: false,
 };
 
 describe("the matching table", () => {
@@ -70,14 +72,24 @@ describe("the matching table", () => {
     expect(
       matchTagRequest("https://facebook.com/tr?id=1234567890123456"),
     ).toEqual({
-      sighting: { kind: "meta", id: "1234567890123456", event: null },
+      sighting: {
+        kind: "meta",
+        id: "1234567890123456",
+        event: null,
+        keyed: false,
+      },
     });
     expect(
       matchTagRequest(
         "https://www.facebook.com/tr/?id=1234567890123456&ev=Add%20To%20Cart",
       ),
     ).toEqual({
-      sighting: { kind: "meta", id: "1234567890123456", event: null },
+      sighting: {
+        kind: "meta",
+        id: "1234567890123456",
+        event: null,
+        keyed: false,
+      },
     });
   });
 
@@ -108,14 +120,71 @@ describe("the matching table", () => {
         "https://www.googleadservices.com/pagead/conversion/1234567890/?en=conversion",
       ),
     ).toEqual({
-      sighting: { kind: "google_ads", id: "AW-1234567890", event: null },
+      sighting: {
+        kind: "google_ads",
+        id: "AW-1234567890",
+        event: null,
+        keyed: false,
+      },
     });
     expect(
       matchTagRequest(
         "https://www.googleadservices.com/pagead/conversion/1234567890/?label=not%20a%20label",
       ),
     ).toEqual({
-      sighting: { kind: "google_ads", id: "AW-1234567890", event: null },
+      sighting: {
+        kind: "google_ads",
+        id: "AW-1234567890",
+        event: null,
+        keyed: false,
+      },
+    });
+  });
+
+  it("reads whether Meta's request carried an event id and Google Ads' an order id, never the value", () => {
+    const keyedMeta = matchTagRequest(
+      `${measured.metaPurchase}&eid=order-1042`,
+    );
+    expect(keyedMeta).toEqual({ sighting: { ...metaPurchase, keyed: true } });
+    expect(JSON.stringify(keyedMeta)).not.toContain("order-1042");
+    expect(matchTagRequest(`${measured.metaPurchase}&eid=`)).toEqual({
+      sighting: metaPurchase,
+    });
+    for (const url of [
+      measured.adsConversion,
+      measured.adsViewThrough,
+      measured.adsFirstParty,
+    ]) {
+      const keyedAds = matchTagRequest(`${url}&oid=1042`);
+      expect(keyedAds, url).toEqual({
+        sighting: { ...adsLabelled, keyed: true },
+      });
+      expect(JSON.stringify(keyedAds)).not.toContain("1042");
+      expect(matchTagRequest(`${url}&oid=`), url).toEqual({
+        sighting: adsLabelled,
+      });
+      // The view-through request carries the key encoded, and no `oid`.
+      const encoded = matchTagRequest(`${url}&eoid=AbC-123`);
+      expect(encoded, url).toEqual({
+        sighting: { ...adsLabelled, keyed: true },
+      });
+      expect(JSON.stringify(encoded)).not.toContain("AbC-123");
+      expect(matchTagRequest(`${url}&eoid=`), url).toEqual({
+        sighting: adsLabelled,
+      });
+    }
+    // Meta's order id is not Google Ads' key, nor the other way round.
+    expect(
+      matchTagRequest(`${measured.metaPurchase}&oid=1042&eoid=AbC`),
+    ).toEqual({
+      sighting: metaPurchase,
+    });
+    expect(matchTagRequest(`${measured.adsConversion}&eid=1042`)).toEqual({
+      sighting: adsLabelled,
+    });
+    // GA4 carries no keyed, whatever its request holds.
+    expect(matchTagRequest(`${measured.ga4Purchase}&eid=1&oid=1`)).toEqual({
+      sighting: ga4,
     });
   });
 
@@ -170,17 +239,39 @@ function metaForm(
 }
 
 const hashedEmail = "a".repeat(64);
-const bothSelectors = ['input[name="id"]', 'input[name="ev"]'];
+const formSelectors = [
+  'input[name="id"]',
+  'input[name="ev"]',
+  'input[name="eid"]',
+];
 
 describe("the form reader", () => {
-  it("reads the pixel and the event from the two fields that name them, and nothing else", () => {
+  it("reads the pixel, the event and whether the event has an id, and nothing else", () => {
     const form = metaForm("https://www.facebook.com/tr/", {
       id: "1234567890123456",
       ev: "Purchase",
       "ud[em]": hashedEmail,
     });
     expect(matchTagForm(form)).toEqual({ sighting: metaPurchase });
-    expect(form.asked).toEqual(bothSelectors);
+    expect(form.asked).toEqual(formSelectors);
+  });
+
+  it("reads an event id as present when its field holds a value, never keeping it", () => {
+    const keyed = metaForm("https://www.facebook.com/tr/", {
+      id: "1234567890123456",
+      ev: "Purchase",
+      eid: "order-1042",
+    });
+    const match = matchTagForm(keyed);
+    expect(match).toEqual({ sighting: { ...metaPurchase, keyed: true } });
+    expect(JSON.stringify(match)).not.toContain("order-1042");
+    expect(keyed.asked).toEqual(formSelectors);
+    const empty = metaForm("https://www.facebook.com/tr/", {
+      id: "1234567890123456",
+      ev: "Purchase",
+      eid: "",
+    });
+    expect(matchTagForm(empty)).toEqual({ sighting: metaPurchase });
   });
 
   it("reads a pixel with no event, or one that does not fit, as a sighting with none", () => {
@@ -190,9 +281,14 @@ describe("the form reader", () => {
     ]) {
       const form = metaForm("https://www.facebook.com/tr", fields);
       expect(matchTagForm(form)).toEqual({
-        sighting: { kind: "meta", id: "1234567890123456", event: null },
+        sighting: {
+          kind: "meta",
+          id: "1234567890123456",
+          event: null,
+          keyed: false,
+        },
       });
-      expect(form.asked).toEqual(bothSelectors);
+      expect(form.asked).toEqual(formSelectors);
     }
   });
 
@@ -200,7 +296,7 @@ describe("the form reader", () => {
     for (const fields of [{ ev: "Purchase" }, { id: "abc", ev: "Purchase" }]) {
       const form = metaForm("https://www.facebook.com/tr/", fields);
       expect(matchTagForm(form)).toEqual({ unread: "meta" });
-      expect(form.asked).toEqual(bothSelectors);
+      expect(form.asked).toEqual(formSelectors);
     }
   });
 
@@ -378,6 +474,25 @@ describe("the port", () => {
     ]);
   });
 
+  it("is keyed only when every request it folded was, at its first request's place", () => {
+    const port = createTagSightingPort();
+    port.start();
+    const at = NOW - 20_000;
+    FakeObserver.instances[0]?.deliver(
+      entry(`${measured.metaPurchase}&eid=order-1`, at),
+      entry(`${measured.adsConversion}&oid=1`, at + 100),
+      entry(`${measured.adsFirstParty}&oid=1`, at + 110),
+      entry(measured.ga4Purchase, at + 200),
+      entry(measured.metaPurchase, at + 5_000),
+    );
+
+    expect(port.around(new Date(at))).toEqual([
+      metaPurchase,
+      { ...adsLabelled, keyed: true },
+      ga4,
+    ]);
+  });
+
   it("answers null when its memory is full and no longer reaches back to the window's start", () => {
     const port = createTagSightingPort();
     port.start();
@@ -548,7 +663,7 @@ describe("the body observer", () => {
       metaPurchase,
     ]);
     expect(port.around(new Date(NOW + TAG_SIGHTING_BEFORE_MS + 1))).toEqual([]);
-    expect(form.asked).toEqual(bothSelectors);
+    expect(form.asked).toEqual(formSelectors);
 
     expect(port.around(new Date(NOW))).toEqual([metaPurchase]);
     expect(port.unreadAround?.(new Date(NOW))).toEqual(["meta"]);

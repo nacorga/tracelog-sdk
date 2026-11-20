@@ -25,7 +25,13 @@ import {
  * nothing before its pixel's configuration has loaded, read on 2026-10-26,
  * which is what lets a runtime started on a parsed page rule out a form it did
  * not watch ([spec/capture.md] § Tag sightings). A change in either is Meta
- * moving, not a fault of the runtime: the reading is taken again.
+ * moving, not a fault of the runtime: the reading is taken again. Each Meta and
+ * Google Ads sighting is keyed exactly when every request it folded carried
+ * its platform's deduplication key, Meta's `eid` and Google Ads' `oid` or
+ * its encoded `eoid`
+ * ([spec/capture.md] § Tag sightings, _Keyed_): a keyed reading sends Meta's
+ * purchase its `eventID` and Google Ads' conversion its `transaction_id`, and
+ * the other sends neither.
  */
 const iifePath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -66,6 +72,12 @@ interface Reading {
   /** `fbq('init')`'s advanced matching, when the page turns it on. */
   readonly matching?: Readonly<Record<string, string>>;
   readonly purchase: Readonly<Record<string, unknown>>;
+  /**
+   * Whether the purchase carries each platform's deduplication key: Meta's
+   * `eventID` on `fbq('track')`, Google Ads' `transaction_id` on its
+   * conversion.
+   */
+  readonly keyed: boolean;
 }
 
 const readings = {
@@ -73,6 +85,7 @@ const readings = {
     value: 10,
     items: [],
     purchase: { value: 10, currency: "EUR" },
+    keyed: true,
   },
   items: {
     value: 249.5,
@@ -83,6 +96,7 @@ const readings = {
       content_type: "product",
       contents: items(12),
     },
+    keyed: false,
   },
   matched: {
     value: 74.85,
@@ -107,6 +121,7 @@ const readings = {
       num_items: 3,
       order_id: "100234",
     },
+    keyed: true,
   },
 } satisfies Record<string, Reading>;
 
@@ -133,8 +148,8 @@ fbq("init", ${js(pixelId)}${reading.matching === undefined ? "" : `, ${js(readin
 addEventListener("load", () => setTimeout(() => {
   TraceLog.conversion("purchase_completed", { identifier: "100234", value: ${js(reading.value)}, currency: "EUR" });
   gtag("event", "purchase", { transaction_id: "100234", value: ${js(reading.value)}, currency: "EUR", items: ${js(ga4Items)} });
-  gtag("event", "conversion", { send_to: ${js(`${adsId}/${adsLabel}`)}, value: ${js(reading.value)}, currency: "EUR", transaction_id: "100234" });
-  fbq("track", "Purchase", ${js(reading.purchase)});
+  gtag("event", "conversion", { send_to: ${js(`${adsId}/${adsLabel}`)}, value: ${js(reading.value)}, currency: "EUR"${reading.keyed ? `, transaction_id: "100234"` : ""} });
+  fbq("track", "Purchase", ${js(reading.purchase)}${reading.keyed ? `, { eventID: "100234" }` : ""});
 }, 500));</script>
 </head><body><p>Thank you for your order.</p></body></html>`;
 }
@@ -227,7 +242,7 @@ const adsConversionPath =
 /** Each vendor request, as a line a failure can name. */
 function described(request: VendorRequest): string {
   const url = new URL(request.url);
-  const names = ["tid", "id", "ev", "label"]
+  const names = ["tid", "id", "ev", "label", "eid", "oid", "eoid"]
     .map((name) => [name, field(request, name)] as const)
     .filter(([, value]) => value !== null)
     .map(([name, value]) => `${name}=${value}`)
@@ -279,6 +294,54 @@ function unreported(
     }
   }
   return missing;
+}
+
+/** Whether a request carried a field with a non-empty value. */
+function carries(request: VendorRequest, name: string): boolean {
+  const value = field(request, name);
+  return value !== null && value !== "";
+}
+
+/**
+ * Each Meta and Google Ads sighting whose `keyed` is not what its requests in
+ * the window carried: true when every one carried its platform's key with a
+ * value, false when one did not.
+ */
+function misKeyed(
+  requests: readonly VendorRequest[],
+  report: TagSightingReport,
+): string[] {
+  const wrong: string[] = [];
+  for (const sighting of report.sightings) {
+    if (sighting.kind === "ga4") continue;
+    const folded = requests.filter((request) => {
+      const url = new URL(request.url);
+      if (sighting.kind === "meta") {
+        return (
+          isMeta(request) &&
+          field(request, "id") === sighting.id &&
+          field(request, "ev") === sighting.event
+        );
+      }
+      const ads = adsConversionPath.exec(url.pathname);
+      if (ads === null) return false;
+      const label = url.searchParams.get("label");
+      return (
+        (label === null ? `AW-${ads[1]}` : `AW-${ads[1]}/${label}`) ===
+        sighting.id
+      );
+    });
+    const keys = sighting.kind === "meta" ? ["eid"] : ["oid", "eoid"];
+    const keyed = (request: VendorRequest): boolean =>
+      keys.some((key) => carries(request, key));
+    const expected = folded.length > 0 && folded.every(keyed);
+    if (sighting.keyed !== expected) {
+      wrong.push(
+        `${sighting.kind} ${sighting.id} ${sighting.event ?? ""}: keyed ${String(sighting.keyed)}, ${keys.join(" or ")} on ${folded.filter(keyed).length} of ${folded.length}`,
+      );
+    }
+  }
+  return wrong;
 }
 
 type Road = "GET image" | "POST ping" | "POST beacon" | "POST document";
@@ -398,6 +461,18 @@ for (const name of Object.keys(readings) as ReadingName[]) {
       unreported(inWindow, report),
       `requests in no report, of ${JSON.stringify(seen, null, 1)} and ${JSON.stringify(report)}`,
     ).toEqual([]);
+    expect(
+      misKeyed(inWindow, report),
+      `a sighting keyed otherwise than its requests, of ${JSON.stringify(seen, null, 1)} and ${JSON.stringify(report)}`,
+    ).toEqual([]);
+    testInfo.annotations.push({
+      type: "keyed",
+      description: JSON.stringify(
+        report.sightings
+          .filter((sighting) => sighting.kind !== "ga4")
+          .map((sighting) => [sighting.id, sighting.event, sighting.keyed]),
+      ),
+    });
     expect(
       await postedBeforeConfiguration(page),
       `Meta has moved: it posted before its pixel's configuration loaded`,
