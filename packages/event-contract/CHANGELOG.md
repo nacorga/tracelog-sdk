@@ -18,6 +18,13 @@ carry it forward.
 This package, `@tracelog/capture-core` and `@tracelog/capture-web` carry one
 number between them.
 
+## [2.6.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.5.0...event-contract@2.6.0) (2026-11-20)
+
+
+### Added
+
+* write whether a Meta or Google Ads sighting carried its key ([6ceabd0](https://github.com/nacorga/tracelog-sdk/commit/6ceabd03773217cc7c785f9f91e72fa140b05621))
+
 ## [2.5.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.4.0...event-contract@2.5.0) (2026-11-19)
 
 

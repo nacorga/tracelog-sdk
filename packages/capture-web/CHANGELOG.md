@@ -18,6 +18,13 @@ patch, and neither requires reading your code.
 Entries after 1.0.0 are drafted from the commits that touched this package and
 edited before release.
 
+## [2.6.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.5.0...capture-web@2.6.0) (2026-11-20)
+
+
+### Added
+
+* write whether a Meta or Google Ads sighting carried its key ([6ceabd0](https://github.com/nacorga/tracelog-sdk/commit/6ceabd03773217cc7c785f9f91e72fa140b05621))
+
 ## [2.5.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.4.0...capture-web@2.5.0) (2026-11-19)
 
 
