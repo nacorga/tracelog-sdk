@@ -14,7 +14,7 @@ import {
 /**
  * The tag sighting in a real engine ([spec/capture.md] § Tag sightings): the
  * runtime reads what the browser recorded of the page's requests, and nothing
- * else but the two fields of Meta's form. Every request is fulfilled here,
+ * else but the three fields of Meta's form. Every request is fulfilled here,
  * vendors' included, so none reaches a vendor's network — a request fulfilled
  * by `page.route` still leaves a Resource Timing entry in all three engines
  * (plans/2026-09-21-the-tag-sighting.md § What was measured), but for a form
@@ -61,7 +61,13 @@ const pixel = Buffer.from(
   "base64",
 );
 
-const metaSighting = { kind: "meta", id: pixelId, event: "Purchase" };
+// The page sends Meta no event id, so its sighting is unkeyed.
+const metaSighting = {
+  kind: "meta",
+  id: pixelId,
+  event: "Purchase",
+  keyed: false,
+};
 const ga4Sighting = { kind: "ga4", id: "G-TL0MEASURE1", event: null };
 
 interface Recorded {
@@ -321,7 +327,7 @@ test("Meta's beacon, whose entry names no pixel, is reported as Meta, unread", a
   expect(recorded.unrouted()).toEqual([]);
 });
 
-test("Meta's form is read from the two fields that name the pixel and the event, and no other", async ({
+test("Meta's form is read from the three fields that name the pixel, the event and its id, and no other", async ({
   page,
   browserName,
 }) => {

@@ -183,8 +183,8 @@ const tagId = (kind: TagSightingKind) =>
 /**
  * From 2.5.0, read on a Meta or Google Ads sighting ([spec/capture.md]
  * § Tag sightings): true when every request the window folded into it carried
- * its platform's deduplication key — Meta's `eid`, Google Ads' `oid` — with a
- * non-empty value, false when one did not. Absent is unknown, never false. A
+ * its platform's deduplication key — Meta's `eid`, Google Ads' `oid` or its
+ * encoded `eoid` — with a non-empty value, false when one did not. Absent is unknown, never false. A
  * GA4 sighting carries none.
  */
 const keyed = z.boolean().exactOptional();

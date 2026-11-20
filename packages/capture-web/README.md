@@ -109,11 +109,13 @@ and whether it is the person's first, and a step the items it shows; a
 malformed one is left out and the event sent without it.
 
 Beside each conversion, which GA4, Meta and Google Ads tags the page requested
-just before and after it — the tag's kind, its id and, for Meta, the event —
-read from the browser's own record of the page's requests and, for the one
-Meta request that record leaves out, from the two fields of the form Meta's
-script adds to the page that name the pixel and the event. Nothing else of
-those requests is kept. A Meta request whose pixel the page does not show is
+just before and after it — the tag's kind, its id, for Meta the event, and,
+for Meta and Google Ads, whether the request carried the platform's
+deduplication key (`eid`; `oid` or `eoid`) — read from the browser's own record
+of the page's requests and, for the one Meta request that record leaves out,
+from the three fields of the form Meta's script adds to the page that name the
+pixel, the event and its id. The key is read as present, never kept, and
+nothing else of those requests is kept. A Meta request whose pixel the page does not show is
 reported as Meta, unread. A conversion is held ten seconds so those requests can
 be seen, sent at once when the page is hidden — its report then says whether it
 was cut short — and never held in verification mode. Context keys beginning

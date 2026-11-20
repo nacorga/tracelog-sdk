@@ -37,7 +37,7 @@ export const RESOURCE_TIMING_BUFFER = 250;
 export type TagMatch =
   { readonly sighting: TagSighting } | { readonly unread: TagSightingKind };
 
-/** A form, as far as the reader reaches into it: its action and two fields. */
+/** A form, as far as the reader reaches into it: its action and three fields. */
 export interface TagForm {
   readonly action: string;
   querySelector(selectors: string): { readonly value: string } | null;
@@ -74,14 +74,28 @@ function isMetaConfiguration(url: string): boolean {
   }
 }
 
+/**
+ * Whether a request carried its platform's deduplication key with a non-empty
+ * value: recorded as present and never kept ([spec/capture.md] § Tag
+ * sightings, _Keyed_).
+ */
+function present(value: string | null | undefined): boolean {
+  return value !== null && value !== undefined && value !== "";
+}
+
 /** A request on Meta's endpoint whose pixel id does not fit is Meta, unread. */
-function metaMatch(id: string | null, event: string | null): TagMatch {
+function metaMatch(
+  id: string | null,
+  event: string | null,
+  keyed: boolean,
+): TagMatch {
   return id !== null && metaIdPattern.test(id)
     ? {
         sighting: {
           kind: "meta",
           id,
           event: event !== null && tagEventPattern.test(event) ? event : null,
+          keyed,
         },
       }
     : { unread: "meta" };
@@ -91,8 +105,10 @@ function metaMatch(id: string | null, event: string | null): TagMatch {
  * The matching table ([spec/capture.md] § Tag sightings): GA4 and Google Ads
  * key on the path and the id, so a regional host and a first-party tagging
  * domain that keeps the path both match; Meta keys on its host as well. What
- * is answered is the tag's kind, its id and Meta's event — nothing else of
- * the URL, which carries the page address and the vendor's client id. Meta's
+ * is answered is the tag's kind, its id, Meta's event and, for Meta and
+ * Google Ads, whether the request carried the platform's deduplication key —
+ * nothing else of the URL, which carries the page address and the vendor's
+ * client id. Meta's
  * beacon leaves an entry named by its bare endpoint, which names no pixel:
  * that is Meta, unread.
  */
@@ -114,7 +130,11 @@ export function matchTagRequest(url: string): TagMatch | null {
   }
 
   if (onMetaEndpoint(parsed)) {
-    return metaMatch(parameters.get("id"), parameters.get("ev"));
+    return metaMatch(
+      parameters.get("id"),
+      parameters.get("ev"),
+      present(parameters.get("eid")),
+    );
   }
 
   const ads = adsPathPattern.exec(path);
@@ -126,6 +146,10 @@ export function matchTagRequest(url: string): TagMatch | null {
         kind: "google_ads",
         id: adsIdPattern.test(labelled) ? labelled : id,
         event: null,
+        // Google's tag sends the key as `oid`, and encoded as `eoid` on the
+        // view-through request it sends on from the conversion.
+        keyed:
+          present(parameters.get("oid")) || present(parameters.get("eoid")),
       },
     };
   }
@@ -135,8 +159,9 @@ export function matchTagRequest(url: string): TagMatch | null {
 /**
  * Meta's long request in Chrome: a form posted into a hidden frame, which
  * leaves no Resource Timing entry ([spec/capture.md] § Tag sightings, _Meta's
- * long request_). Two fields are asked for, the ones that name the pixel and
- * the event, and nothing else of the form is read: its other fields carry the
+ * long request_). Three fields are asked for, the ones that name the pixel,
+ * the event and the event's id, which is read as present or absent and never
+ * kept, and nothing else of the form is read: its other fields carry the
  * visitor's identifiers, hashed.
  */
 export function matchTagForm(form: TagForm): TagMatch | null {
@@ -149,7 +174,12 @@ export function matchTagForm(form: TagForm): TagMatch | null {
   if (!onMetaEndpoint(action)) return null;
   const id = form.querySelector('input[name="id"]');
   const event = form.querySelector('input[name="ev"]');
-  return metaMatch(id?.value ?? null, event?.value ?? null);
+  const eventId = form.querySelector('input[name="eid"]');
+  return metaMatch(
+    id?.value ?? null,
+    event?.value ?? null,
+    present(eventId?.value),
+  );
 }
 
 interface Stamped {
@@ -316,15 +346,24 @@ export function createTagSightingPort(): TagSightingPort {
     around(at) {
       const found = within(at);
       if (found === null) return null;
-      const seen = new Set<string>();
+      // One sighting per kind, id and event, at its first request; keyed only
+      // when every request folded into it was ([spec/capture.md] § Tag
+      // sightings, _Keyed_).
+      const seen = new Map<string, number>();
       const sightings: TagSighting[] = [];
       for (const match of found) {
         if (!("sighting" in match)) continue;
         const { sighting } = match;
         const key = `${sighting.kind} ${sighting.id} ${sighting.event ?? ""}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        sightings.push(sighting);
+        const index = seen.get(key);
+        if (index === undefined) {
+          seen.set(key, sightings.length);
+          sightings.push(sighting);
+        } else if (sighting.kind !== "ga4" && sighting.keyed === false) {
+          const first = sightings[index]!;
+          if (first.kind !== "ga4")
+            sightings[index] = { ...first, keyed: false };
+        }
       }
       return sightings;
     },
