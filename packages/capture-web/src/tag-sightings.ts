@@ -37,7 +37,7 @@ export const RESOURCE_TIMING_BUFFER = 250;
 export type TagMatch =
   { readonly sighting: TagSighting } | { readonly unread: TagSightingKind };
 
-/** A form, as far as the reader reaches into it: its action and two fields. */
+/** A form, as far as the reader reaches into it: its action and three fields. */
 export interface TagForm {
   readonly action: string;
   querySelector(selectors: string): { readonly value: string } | null;
