@@ -1487,3 +1487,81 @@ describe("the session opens on the page", () => {
     expect(requests).toEqual([]);
   });
 });
+
+describe("the visit the runtime last opened", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const UUID_V7 =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  it("is null before a decision, writing nothing and sending nothing", async () => {
+    const { runtime, storage, requests } = setup();
+
+    runtime.open();
+    expect(runtime.visit()).toBeNull();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect([...storage.values.keys()]).toEqual([]);
+    expect(requests).toEqual([]);
+  });
+
+  it("is null while no session is open, though consent is granted", () => {
+    const { runtime } = setup();
+
+    runtime.engine.consent.grant();
+
+    expect(runtime.visit()).toBeNull();
+  });
+
+  it("is the session the page opened, a UUID v7, and creates no storage key", async () => {
+    const { runtime, storage, requests } = setup();
+    runtime.open();
+    runtime.engine.consent.grant();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    const keys = [...storage.values.entries()];
+    const requestCount = requests.length;
+    const id = runtime.visit();
+    runtime.visit();
+
+    expect(id).toMatch(UUID_V7);
+    expect(id).toBe(requests[0]?.batch.events[0]?.sessionId);
+    expect([...storage.values.entries()]).toEqual(keys);
+    expect(requests).toHaveLength(requestCount);
+  });
+
+  it("is still returned after the session closed by inactivity, until the next opens", () => {
+    const { runtime, clock } = setup();
+    runtime.open();
+    runtime.engine.consent.grant();
+    const first = runtime.visit();
+
+    clock.advance(31 * 60 * 1000);
+    expect(runtime.visit()).toBe(first);
+
+    runtime.engine.step("checkout_started");
+    expect(runtime.visit()).toMatch(UUID_V7);
+    expect(runtime.visit()).not.toBe(first);
+  });
+
+  it("is null after a denial, and after a grant is withdrawn by one", () => {
+    const { runtime, storage } = setup();
+    runtime.open();
+    runtime.engine.consent.grant();
+    expect(runtime.visit()).not.toBeNull();
+
+    runtime.engine.consent.deny();
+
+    expect(runtime.visit()).toBeNull();
+    expect([...storage.values.keys()]).toEqual(["__tl.c"]);
+  });
+
+  it("is null when consent was denied from the first", () => {
+    const { runtime } = setup();
+    runtime.open();
+    runtime.engine.consent.deny();
+
+    expect(runtime.visit()).toBeNull();
+  });
+});

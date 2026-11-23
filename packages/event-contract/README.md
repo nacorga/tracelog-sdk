@@ -50,6 +50,10 @@ npm install --save-exact @tracelog/event-contract@2.6.0
 - **The first** — `first`, a boolean on a conversion: whether the site's
   records hold no earlier conversion of that kind by the same person.
   Malformed, it is read as absent and the event stands.
+- **The visit** — `visitId`, a string of 1 to 64 characters on a conversion
+  only: the id `TraceLog.visit()` gave the site's page, which its backend sends
+  back with the order. The runtime never writes it. Malformed, it is read as
+  absent and the event stands; on any other kind the batch is refused.
 - **The opening** — `opening: "page"` on a `session_start` the runtime sent
   because a page loaded; absent, the session opened on an event.
 

@@ -158,6 +158,8 @@ declare const TraceLog: {
   consent: { grant(): void; deny(): void; state(): ConsentState };
   step(name: string, context?: object, options?: StepOptions): void;
   conversion(name: string, options: ConversionOptions): void;
+  /** The id of the session this page load's visit last opened; null when there is none. */
+  visit(): string | null;
 };
 
 export default TraceLog;

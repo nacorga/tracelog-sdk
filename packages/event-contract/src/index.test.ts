@@ -600,3 +600,76 @@ describe("the opening", () => {
     }
   });
 });
+
+describe("the visit a conversion brings", () => {
+  const common = {
+    eventId: "018f0e80-7b20-7000-8000-000000000001",
+    sessionId: "018f0e80-7b20-7000-8000-000000000002",
+    occurredAt: "2026-01-07T12:00:00.000Z",
+  };
+  const conversion = {
+    ...common,
+    kind: "conversion" as const,
+    name: "purchase_completed",
+    identifier: "order_123",
+  };
+  const visitId = "018f0e80-7b20-7000-8000-000000000003";
+
+  it("keeps a visitId of 1 to 64 characters and leaves sessionId alone", () => {
+    for (const value of [visitId, "a", "a".repeat(64)]) {
+      const sent = { ...conversion, visitId: value };
+      expect(conversionEventSchema.parse(sent)).toEqual(sent);
+      const result = validateEventBatch({ v: 1, events: [sent] }, clock);
+      expect(result.accepted).toBe(true);
+    }
+  });
+
+  it("drops a malformed one and keeps the event", () => {
+    for (const value of [1, null, "", "a".repeat(65), {}, true]) {
+      const result = validateEventBatch(
+        { v: 1, events: [{ ...conversion, visitId: value }] },
+        clock,
+      );
+      expect(result.accepted, JSON.stringify(value)).toBe(true);
+      if (!result.accepted) continue;
+      expect(
+        JSON.parse(JSON.stringify(result.batch.events[0])),
+      ).not.toHaveProperty("visitId");
+    }
+  });
+
+  it("still requires sessionId", () => {
+    const without: Record<string, unknown> = { ...conversion, visitId };
+    delete without.sessionId;
+    expect(validateEventBatch({ v: 1, events: [without] }, clock)).toEqual({
+      accepted: false,
+      classification: "invalid_schema",
+    });
+  });
+
+  it("refuses it on every other kind as invalid_schema", () => {
+    const others = [
+      { ...common, kind: "step", name: "checkout_started" },
+      {
+        ...common,
+        kind: "error",
+        name: "capture_error",
+        message: "x",
+        stepName: "checkout_started",
+      },
+      {
+        ...common,
+        kind: "session_start",
+        utm: {},
+        landingPage: "https://shop.example/",
+        device: "desktop",
+      },
+    ];
+    for (const event of others) {
+      expect(
+        validateEventBatch({ v: 1, events: [{ ...event, visitId }] }, clock),
+        event.kind,
+      ).toEqual({ accepted: false, classification: "invalid_schema" });
+    }
+  });
+});

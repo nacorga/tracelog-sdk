@@ -332,6 +332,10 @@ const TraceLog = {
     engine?.conversion(name, options);
     reportDiagnostic();
   },
+  /** The id of the visit's session, to pass to the site's backend; null when there is none. */
+  visit(): string | null {
+    return runtime?.visit() ?? null;
+  },
 };
 
 export default TraceLog;
