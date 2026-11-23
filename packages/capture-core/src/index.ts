@@ -212,6 +212,13 @@ export interface CaptureRuntime {
   /** The page came back from the browser's cache: a page of the visit again. */
   pageRestored(): void;
   drops(): DropCount[];
+  /**
+   * The session this page load's visit last opened, a UUID v7; null before a
+   * consent decision, after a denial and while none is open. A session that
+   * closed by inactivity is still returned until the next one opens. Reads
+   * memory only: it writes no storage and sends nothing.
+   */
+  visit(): string | null;
   circuitState(): CircuitState;
 }
 
@@ -489,6 +496,8 @@ export function createCaptureEngine(
   let pageOpen = false;
   /** This page has opened, or touched, the session. */
   let opened = false;
+  /** The session this runtime last opened or touched; forgotten on a denial. */
+  let lastSessionId: string | undefined;
 
   function scheduleFlush(delay: number): void {
     if (flushTimer !== undefined) clearTimeout(flushTimer);
@@ -521,6 +530,7 @@ export function createCaptureEngine(
 
     if (rotated) safeSet(ports.storage, SESSION_KEY, id);
     safeSet(ports.storage, ACTIVITY_KEY, String(now.getTime()));
+    lastSessionId = id;
     return { id, started: rotated };
   }
 
@@ -904,6 +914,7 @@ export function createCaptureEngine(
         if (!initialized) return;
         consentState = "denied";
         opened = false;
+        lastSessionId = undefined;
         pending = [];
         lastDeclaredName = undefined;
         ports.sightings?.stop();
@@ -968,6 +979,9 @@ export function createCaptureEngine(
       return (["queue_overflow", "server_rejected", "invalid_event"] as const)
         .map((reason) => ({ reason, count: queue.drops[reason] ?? 0 }))
         .filter((drop) => drop.count > 0);
+    },
+    visit() {
+      return consentState === "granted" ? (lastSessionId ?? null) : null;
     },
     circuitState() {
       return circuit;

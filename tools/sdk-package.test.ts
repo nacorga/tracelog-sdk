@@ -61,6 +61,7 @@ const SURFACE = [
   "consent.state",
   "step",
   "conversion",
+  "visit",
 ];
 
 /**
@@ -284,6 +285,8 @@ TraceLog.step("checkout", undefined, {
   items: [{ id: "sku-1", name: "Linen shirt", quantity: 1 }],
 });
 TraceLog.conversion("purchase", { identifier: "order-1" });
+const visit: string | null = TraceLog.visit();
+void visit;
 TraceLog.conversion("purchase", {
   identifier: "order-1",
   value: 12,

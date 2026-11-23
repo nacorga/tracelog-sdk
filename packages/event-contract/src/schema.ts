@@ -110,6 +110,13 @@ export const scheduledForSchema = z.iso.date();
 const dropped = <T extends z.ZodType>(schema: T) =>
   schema.optional().catch(undefined);
 
+/**
+ * From the release that adds it, on a conversion only: the id of the visit the
+ * site's own page held when the order was placed, which the site's backend
+ * passes back. The runtime never writes it.
+ */
+export const visitIdSchema = z.string().min(1).max(64);
+
 export const stepEventSchema = z.strictObject({
   ...commonEventFields,
   kind: z.literal("step"),
@@ -128,6 +135,7 @@ export const conversionEventSchema = z.strictObject({
   scheduledFor: dropped(scheduledForSchema),
   recurring: dropped(z.boolean()),
   first: dropped(z.boolean()),
+  visitId: dropped(visitIdSchema),
 });
 
 export const errorMessageSchema = z

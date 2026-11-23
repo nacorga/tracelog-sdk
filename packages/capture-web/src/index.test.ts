@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import TraceLog from "./index.js";
 
 interface Recorded {
+  readonly storage: Map<string, string>;
   readonly requests: { url: string; body: unknown; keepalive: boolean }[];
   hidden(): Promise<void>;
   /** The browser shows the page, or restores it from its cache. */
@@ -67,6 +68,7 @@ function browser(page: Page = {}): Recorded {
   (globalThis as { window?: unknown }).window = value;
   return {
     requests,
+    storage,
     pageshow(persisted) {
       listeners.get("pageshow")?.({ persisted });
     },
@@ -89,6 +91,7 @@ describe("capture-web public API", () => {
       "consent",
       "step",
       "conversion",
+      "visit",
     ]);
     expect(Object.keys(TraceLog.consent)).toEqual(["grant", "deny", "state"]);
     expect(TraceLog.consent.state()).toBe("unknown");
@@ -397,5 +400,41 @@ describe("capture-web opens the session on the page", () => {
     } finally {
       vi.doUnmock("@tracelog/capture-core");
     }
+  });
+});
+
+describe("capture-web visit()", () => {
+  it("is null before init and before a decision, with no storage written", async () => {
+    const { TraceLog: runtime, recorded } = await load({});
+    expect(runtime.visit()).toBeNull();
+    runtime.init({ key, endpoint });
+
+    expect(runtime.visit()).toBeNull();
+    expect(recorded.requests).toEqual([]);
+    expect([...recorded.storage.keys()]).toEqual([]);
+  });
+
+  it("is the id of the session the page opened, and writes nothing by being read", async () => {
+    const { TraceLog: runtime, recorded } = await load({});
+    runtime.init({ key, endpoint });
+    runtime.consent.grant();
+    const events = sentEvents(recorded);
+    const before = recorded.requests.length;
+    const entries = [...recorded.storage.entries()];
+
+    const id = runtime.visit();
+
+    expect(id).toBe(events[0]?.sessionId);
+    expect(recorded.requests).toHaveLength(before);
+    expect([...recorded.storage.entries()]).toEqual(entries);
+  });
+
+  it("is null after a denial", async () => {
+    const { TraceLog: runtime } = await load({});
+    runtime.init({ key, endpoint });
+    runtime.consent.grant();
+    runtime.consent.deny();
+
+    expect(runtime.visit()).toBeNull();
   });
 });
