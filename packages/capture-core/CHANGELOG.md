@@ -17,6 +17,14 @@ This package, `@tracelog/capture-web` and `@tracelog/event-contract` carry one
 number between them: the browser runtime's published bytes are this engine's
 bytes, so no version of one is not also a version of the others.
 
+## [2.7.0](https://github.com/nacorga/tracelog-sdk/compare/capture-core@2.6.0...capture-core@2.7.0) (2026-11-23)
+
+
+### Added
+
+* the visit a confirmation brings, visitId and TraceLog.visit() ([4af0ecf](https://github.com/nacorga/tracelog-sdk/commit/4af0ecf68ff2bf5436f01341b52feacdba14bb8b))
+* the visit a confirmation brings, visitId and TraceLog.visit() ([5c27a53](https://github.com/nacorga/tracelog-sdk/commit/5c27a5308af5cec12497635bda3ee2a03a0aba15))
+
 ## [2.6.0](https://github.com/nacorga/tracelog-sdk/compare/capture-core@2.5.0...capture-core@2.6.0) (2026-11-20)
 
 

@@ -18,6 +18,14 @@ patch, and neither requires reading your code.
 Entries after 1.0.0 are drafted from the commits that touched this package and
 edited before release.
 
+## [2.7.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.6.0...capture-web@2.7.0) (2026-11-23)
+
+
+### Added
+
+* the visit a confirmation brings, visitId and TraceLog.visit() ([4af0ecf](https://github.com/nacorga/tracelog-sdk/commit/4af0ecf68ff2bf5436f01341b52feacdba14bb8b))
+* the visit a confirmation brings, visitId and TraceLog.visit() ([5c27a53](https://github.com/nacorga/tracelog-sdk/commit/5c27a5308af5cec12497635bda3ee2a03a0aba15))
+
 ## [2.6.0](https://github.com/nacorga/tracelog-sdk/compare/capture-web@2.5.0...capture-web@2.6.0) (2026-11-20)
 
 
