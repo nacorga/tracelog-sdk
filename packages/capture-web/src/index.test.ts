@@ -275,7 +275,11 @@ describe("capture-web calls before init", () => {
   it("holds a step's third argument and makes the step with it", async () => {
     const { TraceLog: runtime, recorded } = await load({});
     const items = [{ id: "sku-1", name: "Linen shirt", quantity: 1 }];
-    runtime.step("cart_viewed", undefined, { items });
+    runtime.step("cart_viewed", undefined, {
+      items,
+      identifier: "lead-1",
+      attribute: "pro",
+    });
     runtime.consent.grant();
 
     runtime.init({ key, endpoint });
@@ -286,6 +290,8 @@ describe("capture-web calls before init", () => {
     );
     expect(events.find((event) => event.kind === "step")).toMatchObject({
       items,
+      identifier: "lead-1",
+      attribute: "pro",
     });
   });
 

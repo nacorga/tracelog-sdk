@@ -1565,3 +1565,96 @@ describe("the visit the runtime last opened", () => {
     expect(runtime.visit()).toBeNull();
   });
 });
+
+describe("the identifier a step carries", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function steps(requests: ReturnType<typeof setup>["requests"]): Event[] {
+    return requests
+      .flatMap((request) => request.batch.events)
+      .filter((event) => event.kind === "step");
+  }
+
+  it("sends the identifier and the attribute as given, at their longest too", () => {
+    for (const [identifier, attribute] of [
+      ["lead_123", "pro"],
+      ["a".repeat(256), "a".repeat(64)],
+    ] as const) {
+      const { runtime, requests } = setup();
+      runtime.engine.consent.grant();
+      runtime.engine.step(
+        "form_submitted",
+        { form: "contact" },
+        { identifier, attribute },
+      );
+
+      const [step] = steps(requests);
+      expect(step).toMatchObject({
+        kind: "step",
+        name: "form_submitted",
+        context: { form: "contact" },
+        identifier,
+        attribute,
+      });
+      expect(step).not.toHaveProperty("visitId");
+      expect(eventSchema.parse(step)).toEqual(step);
+      expect(runtime.drops()).toEqual([]);
+    }
+  });
+
+  it("leaves out a malformed one, sends the step with the other, and counts no drop", () => {
+    const cases: [string, unknown][] = [
+      ["identifier", ""],
+      ["identifier", "a".repeat(257)],
+      ["identifier", 123],
+      ["identifier", null],
+      ["attribute", ""],
+      ["attribute", "a".repeat(65)],
+      ["attribute", true],
+      ["attribute", null],
+    ];
+    for (const [key, value] of cases) {
+      const { runtime, requests } = setup();
+      runtime.engine.consent.grant();
+      runtime.engine.step("form_submitted", undefined, {
+        identifier: "lead_123",
+        attribute: "pro",
+        [key]: value as never,
+      });
+
+      const sent = steps(requests);
+      expect(sent, `${key} ${JSON.stringify(value)}`).toHaveLength(1);
+      expect(sent[0]).not.toHaveProperty(key);
+      expect(sent[0]).toHaveProperty(
+        key === "identifier" ? "attribute" : "identifier",
+      );
+      expect(eventSchema.safeParse(sent[0]).success).toBe(true);
+      expect(runtime.drops()).toEqual([]);
+    }
+  });
+
+  it("writes neither on a step that names none", () => {
+    const { runtime, requests } = setup();
+    runtime.engine.consent.grant();
+    runtime.engine.step("checkout_started");
+
+    const [step] = steps(requests);
+    expect(step).not.toHaveProperty("identifier");
+    expect(step).not.toHaveProperty("attribute");
+  });
+
+  it("keeps both on a step buffered before the grant", () => {
+    const { runtime, requests } = setup();
+    runtime.engine.step("form_submitted", undefined, {
+      identifier: "lead_123",
+      attribute: "pro",
+    });
+    expect(requests).toEqual([]);
+    runtime.engine.consent.grant();
+
+    expect(steps(requests)).toEqual([
+      expect.objectContaining({ identifier: "lead_123", attribute: "pro" }),
+    ]);
+  });
+});

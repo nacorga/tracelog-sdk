@@ -284,6 +284,14 @@ TraceLog.step("checkout", { plan: "free" });
 TraceLog.step("checkout", undefined, {
   items: [{ id: "sku-1", name: "Linen shirt", quantity: 1 }],
 });
+TraceLog.step("form_submitted", undefined, {
+  identifier: "lead-1",
+  attribute: "pro",
+});
+TraceLog.step("form_submitted", undefined, {
+  // @ts-expect-error a step's identifier is a string
+  identifier: 1,
+});
 TraceLog.conversion("purchase", { identifier: "order-1" });
 const visit: string | null = TraceLog.visit();
 void visit;

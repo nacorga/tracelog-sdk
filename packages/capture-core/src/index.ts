@@ -66,11 +66,13 @@ const KEEPALIVE_BUDGET_BYTES = 64 * 1024;
 const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 const PUBLIC_KEY_PATTERN = /^tl_pk_[a-z2-7]{26}$/;
 /**
- * The contract states these inside its schemas (`conversionEventSchema`,
- * `currencySchema`) and exports no constant for them; the schemas themselves
- * are not imported because zod is not part of the runtime a visitor loads.
+ * The contract states these inside its schemas (`identifierSchema`,
+ * `attributeSchema`, `currencySchema`) and exports no constant for them; the
+ * schemas themselves are not imported because zod is not part of the runtime
+ * a visitor loads.
  */
 const MAX_IDENTIFIER_LENGTH = 256;
+const MAX_ATTRIBUTE_LENGTH = 64;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const textEncoder = new TextEncoder();
@@ -117,6 +119,13 @@ export interface InitOptions {
 
 export interface StepOptions {
   items?: Item[];
+  /**
+   * The outcome's stable identifier, the value its conversion will carry, from
+   * the step where the site first knows it.
+   */
+  identifier?: string;
+  /** The value of the one attribute the tracking plan declares for the path. */
+  attribute?: string;
 }
 
 export interface ConversionOptions {
@@ -412,6 +421,13 @@ function itemsOf(value: unknown): Item[] | undefined {
   return serializedBytes(items) <= MAX_ITEMS_BYTES ? items : undefined;
 }
 
+/** A string of 1 to `max` characters, as given, or nothing. */
+function textOf(value: unknown, max: number): string | undefined {
+  return typeof value === "string" && value.length >= 1 && value.length <= max
+    ? value
+    : undefined;
+}
+
 /** What `scheduledForSchema` accepts: a real calendar day. */
 function scheduledForOf(value: unknown): string | undefined {
   if (typeof value !== "string" || !DAY_PATTERN.test(value)) return undefined;
@@ -602,12 +618,22 @@ export function createCaptureEngine(
     if (pendingEvent.kind === "step") {
       const context = jsonContext(pendingEvent.context);
       const items = itemsOf(pendingEvent.options?.items);
+      const identifier = textOf(
+        pendingEvent.options?.identifier,
+        MAX_IDENTIFIER_LENGTH,
+      );
+      const attribute = textOf(
+        pendingEvent.options?.attribute,
+        MAX_ATTRIBUTE_LENGTH,
+      );
       persistEvent({
         ...baseEvent(now, session.id),
         kind: "step",
         name: pendingEvent.name,
         ...(context === undefined ? {} : { context }),
         ...(items === undefined ? {} : { items }),
+        ...(identifier === undefined ? {} : { identifier }),
+        ...(attribute === undefined ? {} : { attribute }),
       });
     } else {
       const options = pendingEvent.options;
