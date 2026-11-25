@@ -18,6 +18,13 @@ carry it forward.
 This package, `@tracelog/capture-core` and `@tracelog/capture-web` carry one
 number between them.
 
+## [2.8.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.7.0...event-contract@2.8.0) (2026-11-25)
+
+
+### Added
+
+* a step carries the identifier its conversion will, and the path's attribute ([7495c40](https://github.com/nacorga/tracelog-sdk/commit/7495c40dbce90198fb5c49271ce7e42be9d52999))
+
 ## [2.7.0](https://github.com/nacorga/tracelog-sdk/compare/event-contract@2.6.0...event-contract@2.7.0) (2026-11-23)
 
 
