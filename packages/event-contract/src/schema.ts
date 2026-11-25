@@ -111,16 +111,34 @@ const dropped = <T extends z.ZodType>(schema: T) =>
   schema.optional().catch(undefined);
 
 /**
- * From the release that adds it, on a conversion only: the id of the visit the
- * site's own page held when the order was placed, which the site's backend
- * passes back. The runtime never writes it.
+ * From 2.7.0 on a conversion, and from 2.8.0 on a step: the id of the visit
+ * the site's own page held, which the site's backend passes back with what it
+ * sends. The runtime never writes it.
  */
 export const visitIdSchema = z.string().min(1).max(64);
+
+/**
+ * The business outcome's stable identifier — an order, a lead id, a booking
+ * reference, an account. Required on a conversion; from 2.8.0 a step may carry
+ * the same value, so the outcome is named from the step the site first knows
+ * it ([spec/capture.md] § The conversion path).
+ */
+export const identifierSchema = z.string().min(1).max(256);
+
+/**
+ * From 2.8.0, on a step only: the value of the one attribute the tracking plan
+ * declares for the path — `pro`, `shopify` — never its name, which the plan
+ * holds.
+ */
+export const attributeSchema = z.string().min(1).max(64);
 
 export const stepEventSchema = z.strictObject({
   ...commonEventFields,
   kind: z.literal("step"),
   items: dropped(itemsSchema),
+  identifier: dropped(identifierSchema),
+  attribute: dropped(attributeSchema),
+  visitId: dropped(visitIdSchema),
 });
 
 export const currencySchema = z.string().regex(/^[A-Z]{3}$/);
@@ -128,7 +146,7 @@ export const currencySchema = z.string().regex(/^[A-Z]{3}$/);
 export const conversionEventSchema = z.strictObject({
   ...commonEventFields,
   kind: z.literal("conversion"),
-  identifier: z.string().min(1).max(256),
+  identifier: identifierSchema,
   value: z.number().nonnegative().optional(),
   currency: currencySchema.optional(),
   items: dropped(itemsSchema),

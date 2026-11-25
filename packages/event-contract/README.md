@@ -50,10 +50,18 @@ npm install --save-exact @tracelog/event-contract@2.7.0
 - **The first** — `first`, a boolean on a conversion: whether the site's
   records hold no earlier conversion of that kind by the same person.
   Malformed, it is read as absent and the event stands.
-- **The visit** — `visitId`, a string of 1 to 64 characters on a conversion
-  only: the id `TraceLog.visit()` gave the site's page, which its backend sends
-  back with the order. The runtime never writes it. Malformed, it is read as
-  absent and the event stands; on any other kind the batch is refused.
+- **The visit** — `visitId`, a string of 1 to 64 characters on a conversion,
+  and from 2.8.0 on a step: the id `TraceLog.visit()` gave the site's page,
+  which its backend sends back with what it sends. The runtime never writes
+  it. Malformed, it is read as absent and the event stands; on any other kind
+  the batch is refused.
+- **The identifier a step carries** — from 2.8.0, on a step, `identifier`,
+  the value its conversion will carry, a string of 1 to 256 characters as
+  the conversion's own (`identifierSchema`), and `attribute`, the value of
+  the one attribute the tracking plan declares for the path, 1 to 64
+  characters (`attributeSchema`). Malformed, each is read as absent and the
+  step stands; `attribute` on any other kind, and `identifier` on an error or
+  a session start, refuse the batch.
 - **The opening** — `opening: "page"` on a `session_start` the runtime sent
   because a page loaded; absent, the session opened on an event.
 

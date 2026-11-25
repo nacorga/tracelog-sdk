@@ -138,6 +138,10 @@ export interface Item {
 
 export interface StepOptions {
   items?: Item[];
+  /** The outcome's stable identifier, the value its conversion will carry, from the step where the site first knows it. */
+  identifier?: string;
+  /** The value of the one attribute the tracking plan declares for the path. */
+  attribute?: string;
 }
 
 export interface ConversionOptions {

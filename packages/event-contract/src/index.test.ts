@@ -647,9 +647,8 @@ describe("the visit a conversion brings", () => {
     });
   });
 
-  it("refuses it on every other kind as invalid_schema", () => {
+  it("refuses it on an error and a session start as invalid_schema", () => {
     const others = [
-      { ...common, kind: "step", name: "checkout_started" },
       {
         ...common,
         kind: "error",
@@ -671,5 +670,140 @@ describe("the visit a conversion brings", () => {
         event.kind,
       ).toEqual({ accepted: false, classification: "invalid_schema" });
     }
+  });
+});
+
+describe("the identifier a step carries", () => {
+  const common = {
+    eventId: "018f0e80-7b20-7000-8000-000000000001",
+    sessionId: "018f0e80-7b20-7000-8000-000000000002",
+    occurredAt: "2026-01-07T12:00:00.000Z",
+  };
+  const step = { ...common, kind: "step" as const, name: "form_submitted" };
+  const visitId = "018f0e80-7b20-7000-8000-000000000003";
+  const wellFormed = {
+    identifier: ["lead_123", "a", "a".repeat(256)],
+    attribute: ["pro", "a", "a".repeat(64)],
+    visitId: [visitId, "a", "a".repeat(64)],
+  } as const;
+  const malformed = {
+    identifier: [1, null, "", "a".repeat(257), {}, true],
+    attribute: [1, null, "", "a".repeat(65), {}, true],
+    visitId: [1, null, "", "a".repeat(65), {}, true],
+  } as const;
+
+  it("keeps an identifier, an attribute and a visitId of their lengths", () => {
+    for (const [key, values] of Object.entries(wellFormed)) {
+      for (const value of values) {
+        const sent = { ...step, [key]: value };
+        const result = validateEventBatch({ v: 1, events: [sent] }, clock);
+        expect(result.accepted, `${key} ${value.length}`).toBe(true);
+        if (result.accepted) expect(result.batch.events[0]).toEqual(sent);
+      }
+    }
+    const whole = {
+      ...step,
+      identifier: "lead_123",
+      attribute: "pro",
+      visitId,
+    };
+    expect(eventSchema.parse(whole)).toEqual(whole);
+  });
+
+  it("drops each malformed one and keeps the step and the others", () => {
+    for (const [key, values] of Object.entries(malformed)) {
+      for (const value of values) {
+        const result = validateEventBatch(
+          {
+            v: 1,
+            events: [
+              {
+                ...step,
+                identifier: "lead_123",
+                attribute: "pro",
+                [key]: value,
+              },
+            ],
+          },
+          clock,
+        );
+        expect(result.accepted, `${key} ${JSON.stringify(value)}`).toBe(true);
+        if (!result.accepted) continue;
+        const event = JSON.parse(JSON.stringify(result.batch.events[0]));
+        expect(event).not.toHaveProperty(key);
+        for (const other of ["identifier", "attribute"].filter(
+          (name) => name !== key,
+        )) {
+          expect(event).toHaveProperty(other);
+        }
+      }
+    }
+  });
+
+  it("refuses an attribute on every other kind as invalid_schema", () => {
+    const others = [
+      { ...common, kind: "conversion", name: "lead", identifier: "lead_123" },
+      {
+        ...common,
+        kind: "error",
+        name: "capture_error",
+        message: "x",
+        stepName: "form_submitted",
+      },
+      {
+        ...common,
+        kind: "session_start",
+        utm: {},
+        landingPage: "https://site.example/",
+        device: "desktop",
+      },
+    ];
+    for (const event of others) {
+      expect(
+        validateEventBatch(
+          { v: 1, events: [{ ...event, attribute: "pro" }] },
+          clock,
+        ),
+        event.kind,
+      ).toEqual({ accepted: false, classification: "invalid_schema" });
+    }
+  });
+
+  it("refuses an identifier on an error and a session start", () => {
+    const others = [
+      {
+        ...common,
+        kind: "error",
+        name: "capture_error",
+        message: "x",
+        stepName: "form_submitted",
+      },
+      {
+        ...common,
+        kind: "session_start",
+        utm: {},
+        landingPage: "https://site.example/",
+        device: "desktop",
+      },
+    ];
+    for (const event of others) {
+      expect(
+        validateEventBatch(
+          { v: 1, events: [{ ...event, identifier: "lead_123" }] },
+          clock,
+        ),
+        event.kind,
+      ).toEqual({ accepted: false, classification: "invalid_schema" });
+    }
+  });
+
+  it("still requires a conversion's identifier", () => {
+    expect(
+      conversionEventSchema.safeParse({
+        ...common,
+        kind: "conversion",
+        name: "lead",
+      }).success,
+    ).toBe(false);
   });
 });

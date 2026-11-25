@@ -75,7 +75,7 @@ That is all of it, and it is what the major version protects.
 | `TraceLog.consent.grant()`             | Allows capture. Queued delivery begins.                                                                                                                                                                                                                                                                           |
 | `TraceLog.consent.deny()`              | Keeps the runtime inert.                                                                                                                                                                                                                                                                                          |
 | `TraceLog.consent.state()`             | `"unknown" \| "granted" \| "denied"`.                                                                                                                                                                                                                                                                             |
-| `TraceLog.step(name, context?, opts?)` | A declared step of the conversion path. `opts.items` are the items it shows.                                                                                                                                                                                                                                      |
+| `TraceLog.step(name, context?, opts?)` | A declared step of the conversion path. `opts.items` are the items it shows; `opts.identifier`, the value its conversion will carry, from the step where your site first knows it; `opts.attribute`, the value of the attribute your tracking plan declares for the path.                                         |
 | `TraceLog.conversion(name, opts)`      | A declared conversion. `opts.identifier` is its stable identifier. `opts.items`, `opts.scheduledFor` and `opts.recurring` say what it was for, and `opts.first` whether it is the person's first.                                                                                                                 |
 | `TraceLog.visit()`                     | The id of the session the runtime last opened on this page load, to hand to your own backend with an order; `null` before a consent decision, after a denial and while no session is open. It creates nothing: no storage, no request. Call it once the runtime has loaded: `window.TraceLog?.visit?.() ?? null`. |
 
@@ -106,8 +106,9 @@ they occur inside the conversion path, attached to the step where they
 happened.
 
 A conversion may carry its items, the day a booking is for, whether it recurs
-and whether it is the person's first, and a step the items it shows; a
-malformed one is left out and the event sent without it.
+and whether it is the person's first, and a step the items it shows, the
+identifier its conversion will carry and the value of its declared attribute;
+a malformed one is left out and the event sent without it.
 
 Beside each conversion, which GA4, Meta and Google Ads tags the page requested
 just before and after it — the tag's kind, its id, for Meta the event, and,
